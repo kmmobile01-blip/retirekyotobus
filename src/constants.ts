@@ -50,7 +50,8 @@ const generateOldSystemTable = (type: 1 | 2 | 3): TableRowT1[] => {
             else if (y <= 21) losUnit = 45;
             else if (y <= 25) losUnit = 50; 
             else if (y <= 30) losUnit = 40; 
-            else losUnit = 35;               
+            else losUnit = 35;
+            if (y > 35) losUnit = 0;
         } else if (type === 2) {
             // Type 2: ② 平成11年4月1日〜平成12年3月31日
             if (y < 2) losUnit = 0; // 満1年未満相当期間（待機）
@@ -60,7 +61,8 @@ const generateOldSystemTable = (type: 1 | 2 | 3): TableRowT1[] => {
             else if (y <= 22) losUnit = 45;
             else if (y <= 26) losUnit = 50; 
             else if (y <= 31) losUnit = 40; 
-            else losUnit = 35;               
+            else losUnit = 35;
+            if (y > 36) losUnit = 0;
         } else {
             // Type 3: ③ 平成12年4月1日〜平成23年9月30日
             if (y < 3) losUnit = 0; // 満2年未満相当期間（待機）
@@ -71,6 +73,7 @@ const generateOldSystemTable = (type: 1 | 2 | 3): TableRowT1[] => {
             else if (y <= 27) losUnit = 50;
             else if (y <= 32) losUnit = 40;
             else losUnit = 35;
+            if (y > 37) losUnit = 0;
         }
         accLos += losUnit;
 
