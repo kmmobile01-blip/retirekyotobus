@@ -63,7 +63,8 @@ const generateOldSystemTable = (type: 1 | 2 | 3): TableRowT1[] => {
             else losUnit = 35;               
         } else {
             // Type 3: ③ 平成12年4月1日〜平成23年9月30日
-            if (y <= 8) losUnit = 5;
+            if (y < 3) losUnit = 0; // 満2年未満相当期間（待機）
+            else if (y <= 8) losUnit = 5;
             else if (y <= 13) losUnit = 10;
             else if (y <= 18) losUnit = 25;
             else if (y <= 23) losUnit = 45;
@@ -106,14 +107,14 @@ const generateOldSystemTable = (type: 1 | 2 | 3): TableRowT1[] => {
             else if (y <= 32) r1Unit = 6;
             else r1Unit = 7;
         } else {
-            // 旧制度③
-            if (y < 2) r1Unit = 0;
-            else if (y <= 6) r1Unit = 1;
-            else if (y <= 14) r1Unit = 2;
-            else if (y <= 21) r1Unit = 3;
-            else if (y === 22) r1Unit = 4;
-            else if (y <= 30) r1Unit = 5;
-            else if (y <= 32) r1Unit = 6;
+            // 旧制度③ (旧制度②をさらに1年ずらす)
+            if (y < 3) r1Unit = 0;
+            else if (y <= 7) r1Unit = 1;
+            else if (y <= 15) r1Unit = 2;
+            else if (y <= 22) r1Unit = 3;
+            else if (y === 23) r1Unit = 4;
+            else if (y <= 31) r1Unit = 5;
+            else if (y <= 33) r1Unit = 6;
             else r1Unit = 7;
         }
         accR1 += r1Unit;

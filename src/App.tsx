@@ -47,11 +47,11 @@ const DEFAULT_CONFIG: Omit<SimulationConfig, 'label'> = {
     // 現行
     defaultYearlyEval: 0,
     retirementAges: { type1: 60, type2: 60, type3: 60, type4: 60 },
-    cutoffYears: { type1: 35, type2: 36, type3: 37, type4: 35 },
+    cutoffYears: { type1: 35, type2: 36, type3: 37, type4: 38 },
     // 将来
     defaultYearlyEvalFuture: 0,
     retirementAgesFuture: { type1: 60, type2: 60, type3: 60, type4: 60 },
-    cutoffYearsFuture: { type1: 35, type2: 36, type3: 37, type4: 35 },
+    cutoffYearsFuture: { type1: 35, type2: 36, type3: 37, type4: 38 },
 
     transitionConfig: { enabled: false, date: new Date(2027, 2, 31) }, // 2027/03/31
     adjustmentConfig: { 
