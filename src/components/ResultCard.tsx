@@ -161,8 +161,8 @@ export const ResultCard: React.FC<ResultCardProps> = ({ resA, resB, configA, con
                 </div>
 
                 {/* Comparison Table */}
-                <div className="border border-slate-200 rounded-xl overflow-hidden mb-8">
-                    <table className="w-full">
+                <div className="border border-slate-200 rounded-xl overflow-x-auto mb-8 touch-pan-y">
+                    <table className="w-full min-w-[600px]">
                         <thead className="bg-slate-100 text-sm font-bold text-slate-500 uppercase">
                             <tr>
                                 <th className="p-4 text-left w-1/4">比較項目</th>
@@ -216,8 +216,8 @@ export const ResultCard: React.FC<ResultCardProps> = ({ resA, resB, configA, con
                 {/* Projection of A vs B (Difference focused) */}
                 <div>
                     <h4 className="font-bold text-slate-700 mb-3 text-base">年度別 引当金繰入額シミュレーション比較</h4>
-                    <div className="border border-slate-200 rounded-xl overflow-hidden max-h-72 overflow-y-auto scrollbar-thin">
-                        <table className="w-full text-base text-center">
+                    <div className="border border-slate-200 rounded-xl overflow-x-auto max-h-72 overflow-y-auto scrollbar-thin touch-pan-y">
+                        <table className="w-full text-base text-center min-w-[600px]">
                             <thead className="bg-slate-100 text-sm font-bold text-slate-500 sticky top-0">
                                 <tr>
                                     <th className="p-3">年度</th>

@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
 import { 
@@ -7,7 +7,7 @@ import {
     FileSpreadsheet, Loader2, AlertCircle, CheckCircle2, Sliders,
     FileDown, Database, Trash2, ShieldCheck, RotateCcw, Copy, FileText,
     PieChart, Users, Medal, ChevronDown, ChevronUp, UserPlus, Calendar, ArrowRightCircle, HelpCircle,
-    Play, Lock, RefreshCw, BookOpen, MessageSquare, X
+    Play, Lock, RefreshCw, BookOpen, MessageSquare, X, Moon, Sun
 } from 'lucide-react';
 import { 
     EmployeeInputRow, TableRowT1, TableRowT2, CoefSettings, 
@@ -80,20 +80,89 @@ const DEFAULT_CONFIG: Omit<SimulationConfig, 'label'> = {
 
 export default function App() {
     // --- State ---
-    const [data, setData] = useState<EmployeeInputRow[]>([]); 
+    const [data, setData] = useState<EmployeeInputRow[]>(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('retirement-sim-data');
+            return saved ? JSON.parse(saved) : [];
+        }
+        return [];
+    }); 
     const [showHelp, setShowHelp] = useState<boolean>(false);
-    const [showChatMode, setShowChatMode] = useState<boolean>(false);
+    const [showChatMode, setShowChatMode] = useState<boolean>(() => {
+        if (typeof window !== 'undefined') {
+            return localStorage.getItem('retirement-sim-view-chat') === 'true';
+        }
+        return false;
+    });
+    const [darkMode, setDarkMode] = useState<boolean>(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('retirement-sim-dark-mode');
+            return saved === 'true';
+        }
+        return false;
+    });
+
+    useEffect(() => {
+        localStorage.setItem('retirement-sim-dark-mode', String(darkMode));
+        if (darkMode) {
+            document.documentElement.classList.add('dark');
+        } else {
+            document.documentElement.classList.remove('dark');
+        }
+    }, [darkMode]);
+
+    useEffect(() => {
+        localStorage.setItem('retirement-sim-data', JSON.stringify(data));
+    }, [data]);
+
+    useEffect(() => {
+        localStorage.setItem('retirement-sim-view-chat', String(showChatMode));
+    }, [showChatMode]);
     
     // Deep Clone for independence
-    const [configA, setConfigA] = useState<SimulationConfig>({ 
-        ...deepClone(DEFAULT_CONFIG), 
-        label: 'パターンA (変更案)',
-        transitionConfig: { enabled: false, date: new Date(2027, 2, 31) }
+    const [configA, setConfigA] = useState<SimulationConfig>(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('retirement-sim-config-a');
+            if (saved) {
+                try {
+                    const parsed = JSON.parse(saved);
+                    if (parsed.transitionConfig?.date) parsed.transitionConfig.date = new Date(parsed.transitionConfig.date);
+                    return parsed;
+                } catch (e) { console.error(e); }
+            }
+        }
+        return { 
+            ...deepClone(DEFAULT_CONFIG), 
+            label: 'パターンA (変更案)',
+            transitionConfig: { enabled: false, date: new Date(2027, 2, 31) }
+        };
     });
-    const [configB, setConfigB] = useState<SimulationConfig>({ ...deepClone(DEFAULT_CONFIG), label: 'パターンB (現行制度)' });
+    const [configB, setConfigB] = useState<SimulationConfig>(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('retirement-sim-config-b');
+            if (saved) {
+                try {
+                    const parsed = JSON.parse(saved);
+                    if (parsed.transitionConfig?.date) parsed.transitionConfig.date = new Date(parsed.transitionConfig.date);
+                    return parsed;
+                } catch (e) { console.error(e); }
+            }
+        }
+        return { ...deepClone(DEFAULT_CONFIG), label: 'パターンB (現行制度)' };
+    });
+
+    useEffect(() => {
+        localStorage.setItem('retirement-sim-config-a', JSON.stringify(configA));
+    }, [configA]);
+
+    useEffect(() => {
+        localStorage.setItem('retirement-sim-config-b', JSON.stringify(configB));
+    }, [configB]);
 
     const [status, setStatus] = useState<string>('待機中');
+    const [success, setSuccess] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
     const [progress, setProgress] = useState<number>(0);
     const [isCalculating, setIsCalculating] = useState<boolean>(false);
     
@@ -101,11 +170,32 @@ export default function App() {
     const [calcTrigger, setCalcTrigger] = useState<number>(0);
     
     // Master Editor State
-    const [editingPattern, setEditingPattern] = useState<'A' | 'B' | null>(null);
+    const [editingPattern, setEditingPattern] = useState<'A' | 'B' | null>(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('retirement-sim-editing-pattern');
+            return (saved === 'A' || saved === 'B') ? saved : null;
+        }
+        return null;
+    });
+
+    useEffect(() => {
+        if (editingPattern) localStorage.setItem('retirement-sim-editing-pattern', editingPattern);
+        else localStorage.removeItem('retirement-sim-editing-pattern');
+    }, [editingPattern]);
     const [editorInitialTab, setEditorInitialTab] = useState<'masterData2' | 'future'>('masterData2');
 
     // Aggregated Data for Chart
-    const [aggregatedData, setAggregatedData] = useState<AggregatedYearlyData[]>([]);
+    const [aggregatedData, setAggregatedData] = useState<AggregatedYearlyData[]>(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('retirement-sim-aggregated');
+            return saved ? JSON.parse(saved) : [];
+        }
+        return [];
+    });
+
+    useEffect(() => {
+        localStorage.setItem('retirement-sim-aggregated', JSON.stringify(aggregatedData));
+    }, [aggregatedData]);
 
     // Settings (Hidden/Fixed)
     const [fractionConfig] = useState<FractionConfig>({ 
@@ -115,12 +205,40 @@ export default function App() {
     const [includeCurrentFiscalYear] = useState<boolean>(false);
 
     // Search State
-    const [searchTerm, setSearchTerm] = useState<string>('');
-    const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
+    const [searchTerm, setSearchTerm] = useState<string>(() => {
+        if (typeof window !== 'undefined') {
+            return localStorage.getItem('retirement-sim-search-term') || '';
+        }
+        return '';
+    });
+    const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(() => {
+        if (typeof window !== 'undefined') {
+            return localStorage.getItem('retirement-sim-selected-id');
+        }
+        return null;
+    });
+
+    useEffect(() => {
+        localStorage.setItem('retirement-sim-search-term', searchTerm);
+    }, [searchTerm]);
+
+    useEffect(() => {
+        if (selectedEmployeeId) localStorage.setItem('retirement-sim-selected-id', selectedEmployeeId);
+        else localStorage.removeItem('retirement-sim-selected-id');
+    }, [selectedEmployeeId]);
     const [searchError, setSearchError] = useState<string | null>(null);
 
     // Analysis View State
-    const [showAnalysis, setShowAnalysis] = useState<boolean>(false);
+    const [showAnalysis, setShowAnalysis] = useState<boolean>(() => {
+        if (typeof window !== 'undefined') {
+            return localStorage.getItem('retirement-sim-view-analysis') === 'true';
+        }
+        return false;
+    });
+
+    useEffect(() => {
+        localStorage.setItem('retirement-sim-view-analysis', String(showAnalysis));
+    }, [showAnalysis]);
 
     // Helper to run calculation
     const runCalculation = useCallback((
@@ -210,20 +328,34 @@ export default function App() {
         return null;
     }, [selectedEmployeeId, data, configA, configB, runCalculation]);
 
+    const [showClearConfirm, setShowClearConfirm] = useState(false);
+    const [confirmAction, setConfirmAction] = useState<{
+        title: string;
+        message: string;
+        onConfirm: () => void;
+    } | null>(null);
+
     // Auto-search (Initial Load or when data changes but search term exists)
     useEffect(() => {
         if (data.length > 0 && !selectedEmployeeId && !searchTerm) {
             const sorted = [...data].sort((a, b) => {
-                const idA = String(a['社員番号'] || a['employeeId'] || '999999');
-                const idB = String(b['社員番号'] || b['employeeId'] || '999999');
+                const idA = String(COL_ALIASES.id.reduce((found: any, alias: string) => found !== undefined ? found : (a as any)[alias], undefined) || '999999');
+                const idB = String(COL_ALIASES.id.reduce((found: any, alias: string) => found !== undefined ? found : (b as any)[alias], undefined) || '999999');
                 return idA.localeCompare(idB, undefined, {numeric: true});
             });
             if(sorted.length > 0) {
-                const minId = String(sorted[0]['社員番号'] || sorted[0]['employeeId'] || '');
-                setSearchTerm(minId);
+                const firstRow = sorted[0] as any;
+                const minId = String(COL_ALIASES.id.reduce((found: any, alias: string) => found !== undefined ? found : firstRow[alias], undefined) || '');
+                if (minId) {
+                    setSearchTerm(minId);
+                    // Automatically select the first one
+                    setSelectedEmployeeId(minId);
+                }
             }
         }
     }, [data, selectedEmployeeId, searchTerm]);
+
+    const isInitialMount = useRef(true);
 
     // --- Aggregation Logic (Manual Trigger + Config Change) ---
     useEffect(() => {
@@ -233,110 +365,123 @@ export default function App() {
                 return;
             }
             
+            // Skip initial calculation if we already have aggregated data from localStorage
+            if (isInitialMount.current && aggregatedData.length > 0) {
+                isInitialMount.current = false;
+                return;
+            }
+            isInitialMount.current = false;
+            
             setIsCalculating(true);
             setProgress(0);
             setStatus('計算中...');
             
-            // Allow UI to update
-            await new Promise(resolve => setTimeout(resolve, 50));
+            try {
+                // Allow UI to update
+                await new Promise(resolve => setTimeout(resolve, 50));
 
-            const costsMap = new Map<number, {
-                A: { type1: number, type2: number, type3: number, type4: number },
-                B: { type1: number, type2: number, type3: number, type4: number },
-                payoutA: { type1: number, type2: number, type3: number, type4: number },
-                payoutB: { type1: number, type2: number, type3: number, type4: number },
-                counts: { type1: number, type2: number, type3: number, type4: number },
-                stockA: { type1: number, type2: number, type3: number, type4: number },
-                stockB: { type1: number, type2: number, type3: number, type4: number }
-            }>();
+                const costsMap = new Map<number, {
+                    A: { type1: number, type2: number, type3: number, type4: number },
+                    B: { type1: number, type2: number, type3: number, type4: number },
+                    payoutA: { type1: number, type2: number, type3: number, type4: number },
+                    payoutB: { type1: number, type2: number, type3: number, type4: number },
+                    counts: { type1: number, type2: number, type3: number, type4: number },
+                    stockA: { type1: number, type2: number, type3: number, type4: number },
+                    stockB: { type1: number, type2: number, type3: number, type4: number }
+                }>();
 
-            for (let y = 2025; y <= 2080; y++) {
-                costsMap.set(y, {
-                    A: { type1: 0, type2: 0, type3: 0, type4: 0 },
-                    B: { type1: 0, type2: 0, type3: 0, type4: 0 },
-                    payoutA: { type1: 0, type2: 0, type3: 0, type4: 0 },
-                    payoutB: { type1: 0, type2: 0, type3: 0, type4: 0 },
-                    counts: { type1: 0, type2: 0, type3: 0, type4: 0 },
-                    stockA: { type1: 0, type2: 0, type3: 0, type4: 0 },
-                    stockB: { type1: 0, type2: 0, type3: 0, type4: 0 }
-                });
-            }
+                for (let y = 2025; y <= 2080; y++) {
+                    costsMap.set(y, {
+                        A: { type1: 0, type2: 0, type3: 0, type4: 0 },
+                        B: { type1: 0, type2: 0, type3: 0, type4: 0 },
+                        payoutA: { type1: 0, type2: 0, type3: 0, type4: 0 },
+                        payoutB: { type1: 0, type2: 0, type3: 0, type4: 0 },
+                        counts: { type1: 0, type2: 0, type3: 0, type4: 0 },
+                        stockA: { type1: 0, type2: 0, type3: 0, type4: 0 },
+                        stockB: { type1: 0, type2: 0, type3: 0, type4: 0 }
+                    });
+                }
 
-            const chunkSize = 100; // Process 100 employees at a time
-            for (let i = 0; i < data.length; i += chunkSize) {
-                const chunk = data.slice(i, i + chunkSize);
-                
-                chunk.forEach(row => {
-                    const resB = runCalculation(row, configB);
-                    const targetAmount = (configA.adjustmentConfig?.enabled || configA.unifyNewSystemConfig?.enabled) && resB ? resB.retirementAllowance : undefined;
-                    const targetReserve = (configA.adjustmentConfig?.enabled || configA.unifyNewSystemConfig?.enabled) && resB ? resB.reserve2026 : undefined;
+                const chunkSize = 100; // Process 100 employees at a time
+                for (let i = 0; i < data.length; i += chunkSize) {
+                    const chunk = data.slice(i, i + chunkSize);
                     
-                    const resA = runCalculation(row, configA, targetAmount, targetReserve);
+                    chunk.forEach(row => {
+                        const resB = runCalculation(row, configB);
+                        const targetAmount = (configA.adjustmentConfig?.enabled || configA.unifyNewSystemConfig?.enabled) && resB ? resB.retirementAllowance : undefined;
+                        const targetReserve = (configA.adjustmentConfig?.enabled || configA.unifyNewSystemConfig?.enabled) && resB ? resB.reserve2026 : undefined;
+                        
+                        const resA = runCalculation(row, configA, targetAmount, targetReserve);
 
-                    if (resA && resB) {
-                        const typeKey = resA.typeKey;
+                        if (resA && resB) {
+                            const typeKey = resA.typeKey;
 
-                        // Optimized counts: only loop up to retirement year
-                        const rYearA = resA.retirementFiscalYear;
-                        for (let y = 2025; y <= 2080; y++) {
-                            if (y < rYearA) {
-                                if(costsMap.has(y)) costsMap.get(y)!.counts[typeKey] += 1;
-                            } else {
-                                break; // No need to check further years
+                            // Optimized counts: only loop up to retirement year
+                            const rYearA = resA.retirementFiscalYear;
+                            for (let y = 2025; y <= 2080; y++) {
+                                if (y < rYearA) {
+                                    if(costsMap.has(y)) costsMap.get(y)!.counts[typeKey] += 1;
+                                } else {
+                                    break; // No need to check further years
+                                }
+                            }
+
+                            resA.yearlyDetails.forEach(d => { if (costsMap.has(d.year)) costsMap.get(d.year)!.A[typeKey] += d.amountInc; });
+                            resB.yearlyDetails.forEach(d => { if (costsMap.has(d.year)) costsMap.get(d.year)!.B[typeKey] += d.amountInc; });
+
+                            if (costsMap.has(rYearA)) {
+                                costsMap.get(rYearA)!.payoutA[typeKey] += resA.retirementAllowance;
+                            }
+
+                            const rYearB = resB.retirementFiscalYear;
+                            if (costsMap.has(rYearB)) {
+                                costsMap.get(rYearB)!.payoutB[typeKey] += resB.retirementAllowance;
+                            }
+
+                            if (costsMap.has(2025)) {
+                                costsMap.get(2025)!.stockA[typeKey] += resA.reserve2026;
+                                costsMap.get(2025)!.stockB[typeKey] += resB.reserve2026;
                             }
                         }
+                    });
 
-                        resA.yearlyDetails.forEach(d => { if (costsMap.has(d.year)) costsMap.get(d.year)!.A[typeKey] += d.amountInc; });
-                        resB.yearlyDetails.forEach(d => { if (costsMap.has(d.year)) costsMap.get(d.year)!.B[typeKey] += d.amountInc; });
+                    setProgress(Math.round(((i + chunk.length) / data.length) * 100));
+                    // Yield to main thread
+                    await new Promise(resolve => setTimeout(resolve, 0));
+                }
 
-                        if (costsMap.has(rYearA)) {
-                            costsMap.get(rYearA)!.payoutA[typeKey] += resA.retirementAllowance;
-                        }
+                const sorted: AggregatedYearlyData[] = Array.from(costsMap.entries())
+                    .map(([year, val]) => {
+                        const totalA = val.A.type1 + val.A.type2 + val.A.type3 + val.A.type4;
+                        const totalB = val.B.type1 + val.B.type2 + val.B.type3 + val.B.type4;
+                        const totalPayoutA = val.payoutA.type1 + val.payoutA.type2 + val.payoutA.type3 + val.payoutA.type4;
+                        const totalPayoutB = val.payoutB.type1 + val.payoutB.type2 + val.payoutB.type3 + val.payoutB.type4;
+                        const totalCount = val.counts.type1 + val.counts.type2 + val.counts.type3 + val.counts.type4;
+                        
+                        const totalStockA = val.stockA.type1 + val.stockA.type2 + val.stockA.type3 + val.stockA.type4;
+                        const totalStockB = val.stockB.type1 + val.stockB.type2 + val.stockB.type3 + val.stockB.type4;
 
-                        const rYearB = resB.retirementFiscalYear;
-                        if (costsMap.has(rYearB)) {
-                            costsMap.get(rYearB)!.payoutB[typeKey] += resB.retirementAllowance;
-                        }
-
-                        if (costsMap.has(2025)) {
-                            costsMap.get(2025)!.stockA[typeKey] += resA.reserve2026;
-                            costsMap.get(2025)!.stockB[typeKey] += resB.reserve2026;
-                        }
-                    }
-                });
-
-                setProgress(Math.round(((i + chunk.length) / data.length) * 100));
-                // Yield to main thread
-                await new Promise(resolve => setTimeout(resolve, 0));
+                        return {
+                            year,
+                            A: { type1: val.A.type1, type2: val.A.type2, type3: val.A.type3, type4: val.A.type4, total: totalA },
+                            B: { type1: val.B.type1, type2: val.B.type2, type3: val.B.type3, type4: val.B.type4, total: totalB },
+                            stockA: { type1: val.stockA.type1, type2: val.stockA.type2, type3: val.stockA.type3, type4: val.stockA.type4, total: totalStockA },
+                            stockB: { type1: val.stockB.type1, type2: val.stockB.type2, type3: val.stockB.type3, type4: val.stockB.type4, total: totalStockB },
+                            payoutA: { type1: val.payoutA.type1, type2: val.payoutA.type2, type3: val.payoutA.type3, type4: val.payoutA.type4, total: totalPayoutA },
+                            payoutB: { type1: val.payoutB.type1, type2: val.payoutB.type2, type3: val.payoutB.type3, type4: val.payoutB.type4, total: totalPayoutB },
+                            counts: { type1: val.counts.type1, type2: val.counts.type2, type3: val.counts.type3, type4: val.counts.type4, total: totalCount }
+                        };
+                    })
+                    .sort((a, b) => a.year - b.year);
+                
+                setAggregatedData(sorted);
+            } catch (err) {
+                console.error('Aggregation error:', err);
+                setError('集計中にエラーが発生しました。');
+            } finally {
+                setIsCalculating(false);
+                setStatus('待機中');
             }
-
-            const sorted: AggregatedYearlyData[] = Array.from(costsMap.entries())
-                .map(([year, val]) => {
-                    const totalA = val.A.type1 + val.A.type2 + val.A.type3 + val.A.type4;
-                    const totalB = val.B.type1 + val.B.type2 + val.B.type3 + val.B.type4;
-                    const totalPayoutA = val.payoutA.type1 + val.payoutA.type2 + val.payoutA.type3 + val.payoutA.type4;
-                    const totalPayoutB = val.payoutB.type1 + val.payoutB.type2 + val.payoutB.type3 + val.payoutB.type4;
-                    const totalCount = val.counts.type1 + val.counts.type2 + val.counts.type3 + val.counts.type4;
-                    
-                    const totalStockA = val.stockA.type1 + val.stockA.type2 + val.stockA.type3 + val.stockA.type4;
-                    const totalStockB = val.stockB.type1 + val.stockB.type2 + val.stockB.type3 + val.stockB.type4;
-
-                    return {
-                        year,
-                        A: { type1: val.A.type1, type2: val.A.type2, type3: val.A.type3, type4: val.A.type4, total: totalA },
-                        B: { type1: val.B.type1, type2: val.B.type2, type3: val.B.type3, type4: val.B.type4, total: totalB },
-                        stockA: { type1: val.stockA.type1, type2: val.stockA.type2, type3: val.stockA.type3, type4: val.stockA.type4, total: totalStockA },
-                        stockB: { type1: val.stockB.type1, type2: val.stockB.type2, type3: val.stockB.type3, type4: val.stockB.type4, total: totalStockB },
-                        payoutA: { type1: val.payoutA.type1, type2: val.payoutA.type2, type3: val.payoutA.type3, type4: val.payoutA.type4, total: totalPayoutA },
-                        payoutB: { type1: val.payoutB.type1, type2: val.payoutB.type2, type3: val.payoutB.type3, type4: val.payoutB.type4, total: totalPayoutB },
-                        counts: { type1: val.counts.type1, type2: val.counts.type2, type3: val.counts.type3, type4: val.counts.type4, total: totalCount }
-                    };
-                })
-                .sort((a, b) => a.year - b.year);
-            
-            setAggregatedData(sorted);
-            setIsCalculating(false);
-            setStatus('待機中');
         };
 
         calculateAggregatedCosts();
@@ -451,24 +596,65 @@ export default function App() {
 
 
     // --- Handlers ---
-    const handleDataFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleDataFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0]; 
         if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (evt) => {
-            try {
-                const buf = evt.target?.result;
-                const wb = XLSX.read(buf, { type: 'array' });
-                const json = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]) as EmployeeInputRow[];
-                if (json.length === 0) throw new Error("データなし");
-                setData(json);
+        
+        setStatus('データ読込中...');
+        setError(null);
+        
+        try {
+            // Use modern arrayBuffer() if available, otherwise fallback to FileReader
+            let buf: ArrayBuffer;
+            if (typeof file.arrayBuffer === 'function') {
+                buf = await file.arrayBuffer();
+            } else {
+                buf = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = (evt) => resolve(evt.target?.result as ArrayBuffer);
+                    reader.onerror = () => reject(new Error("ファイルの読み込みに失敗しました"));
+                    reader.readAsArrayBuffer(file);
+                });
+            }
+
+            if (!buf) throw new Error("ファイルの読み込みに失敗しました");
+            
+            const wb = XLSX.read(buf, { type: 'array', cellDates: true });
+            const sheetName = wb.SheetNames[0];
+            const worksheet = wb.Sheets[sheetName];
+            const json = XLSX.utils.sheet_to_json(worksheet, { defval: "" }) as EmployeeInputRow[];
+            
+            if (json.length === 0) throw new Error("データが含まれていません");
+            
+            setData(json);
+            setSelectedEmployeeId(null);
+            setSuccess(`社員データ ${json.length}件を読み込みました`);
+            setCalcTrigger(prev => prev + 1);
+            setStatus('待機中');
+            setTimeout(() => setSuccess(null), 3000);
+        } catch (err: any) { 
+            console.error(err);
+            setError('データ読込エラー: ' + err.message + '\nCSVまたはExcel形式であることを確認してください。'); 
+            setStatus('エラー');
+        } finally {
+            e.target.value = '';
+        }
+    };
+
+    const handleLoadSample = () => {
+        setConfirmAction({
+            title: 'サンプルデータの読み込み',
+            message: 'サンプルデータを読み込みますか？（現在のデータは上書きされます）',
+            onConfirm: () => {
+                setData(SAMPLE_EMPLOYEE_DATA);
                 setSelectedEmployeeId(null);
-                alert(`社員データ ${json.length}件を読み込みました`);
-                setCalcTrigger(prev => prev + 1); // Trigger calc on load
-            } catch (err: any) { alert('データ読込エラー: ' + err.message); }
-        };
-        reader.readAsArrayBuffer(file);
-        e.target.value = '';
+                setSuccess(`サンプルデータ ${SAMPLE_EMPLOYEE_DATA.length}件を読み込みました`);
+                setCalcTrigger(prev => prev + 1);
+                setStatus('待機中');
+                setTimeout(() => setSuccess(null), 3000);
+                setConfirmAction(null);
+            }
+        });
     };
 
     const handleDownloadTemplate = () => {
@@ -481,18 +667,49 @@ export default function App() {
     };
 
     const handleClearData = () => {
-        if (window.confirm('データをクリアしますか？')) {
-            setData([]); setAggregatedData([]); setSelectedEmployeeId(null); setSearchTerm(''); setStatus('待機中');
-            setShowAnalysis(false);
-        }
+        setConfirmAction({
+            title: 'データのクリア',
+            message: '全ての社員データ、分析レポート、チャット履歴を消去しますか？この操作は取り消せません。',
+            onConfirm: () => {
+                setData([]);
+                setAggregatedData([]);
+                setSelectedEmployeeId(null);
+                setSearchTerm('');
+                setStatus('待機中');
+                setShowAnalysis(false);
+                setSuccess('全てのデータをクリアしました。');
+                
+                // Clear AI related localStorage
+                localStorage.removeItem('retirement-sim-report-content');
+                localStorage.removeItem('retirement-sim-report-csvmap');
+                localStorage.removeItem('retirement-sim-report-proposed');
+                localStorage.removeItem('retirement-sim-report-messages');
+                localStorage.removeItem('retirement-sim-report-constraints');
+                localStorage.removeItem('retirement-sim-chat-messages');
+                
+                setTimeout(() => setSuccess(null), 3000);
+                setConfirmAction(null);
+                
+                // Reload to reset states that don't have effects
+                window.location.reload();
+            }
+        });
     };
 
     const handleResetSettings = (target: 'A' | 'B') => {
-        if (window.confirm(`${target === 'A' ? 'パターンA' : 'パターンB'}の設定を初期値に戻しますか？`)) {
-            const def = { ...deepClone(DEFAULT_CONFIG), label: target === 'A' ? 'パターンA (変更案)' : 'パターンB (現行制度)' };
-            if (target === 'A') setConfigA(def);
-            else setConfigB(def);
-        }
+        setConfirmAction({
+            title: '設定のリセット',
+            message: `${target === 'A' ? 'パターンA' : 'パターンB'}の設定を初期値に戻しますか？`,
+            onConfirm: () => {
+                const def = { ...deepClone(DEFAULT_CONFIG), label: target === 'A' ? 'パターンA (変更案)' : 'パターンB (現行制度)' };
+                if (target === 'A') setConfigA(def);
+                else setConfigB(def);
+                setCalcTrigger(prev => prev + 1);
+                setSuccess(`${target === 'A' ? 'パターンA' : 'パターンB'}をリセットしました`);
+                setTimeout(() => setSuccess(null), 3000);
+                setConfirmAction(null);
+            }
+        });
     };
     
     const handleMasterSave = (newConfig: SimulationConfig) => {
@@ -909,16 +1126,16 @@ export default function App() {
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-2">
                     定年年齢 (歳) {config.transitionConfig.enabled && <span className="text-indigo-600 ml-1">[現行]</span>}
                 </label>
-                <div className="grid grid-cols-4 gap-3">
+                <div className="grid grid-cols-4 gap-2 sm:gap-3">
                     {['type1','type2','type3','type4'].map((t, i) => (
                         <div key={t}>
-                            <span className="block text-[11px] text-slate-400 text-center mb-0.5">{['旧①','旧②','旧③','新'][i]}</span>
+                            <span className="block text-[10px] sm:text-[11px] text-slate-400 text-center mb-0.5">{['旧①','旧②','旧③','新'][i]}</span>
                             <input 
                                 type="number" 
                                 value={(config.retirementAges as any)[t]} 
                                 onChange={e => setConfig({...config, retirementAges: {...config.retirementAges, [t]: Number(e.target.value)}})} 
                                 disabled={config.adjustmentConfig?.enabled || config.unifyNewSystemConfig?.enabled}
-                                className={`w-full p-2 border-slate-300 rounded text-base text-center ${config.adjustmentConfig?.enabled || config.unifyNewSystemConfig?.enabled ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}`}
+                                className={`w-full p-1.5 sm:p-2 border-slate-300 rounded text-sm sm:text-base text-center ${config.adjustmentConfig?.enabled || config.unifyNewSystemConfig?.enabled ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}`}
                             />
                         </div>
                     ))}
@@ -930,15 +1147,15 @@ export default function App() {
                     <label className="block text-xs font-bold text-indigo-600 uppercase mb-2">
                         定年年齢 (歳) <span className="bg-indigo-600 text-white px-1.5 py-0.5 rounded text-[10px] ml-1">改定後</span>
                     </label>
-                    <div className="grid grid-cols-4 gap-3">
+                    <div className="grid grid-cols-4 gap-2 sm:gap-3">
                         {['type1','type2','type3','type4'].map((t, i) => (
                             <div key={t}>
-                                <span className="block text-[11px] text-indigo-400 text-center mb-0.5">{['旧①','旧②','旧③','新'][i]}</span>
+                                <span className="block text-[10px] sm:text-[11px] text-indigo-400 text-center mb-0.5">{['旧①','旧②','旧③','新'][i]}</span>
                                 <input 
                                     type="number" 
                                     value={(config.retirementAgesFuture as any)[t]} 
                                     onChange={e => setConfig({...config, retirementAgesFuture: {...config.retirementAgesFuture, [t]: Number(e.target.value)}})} 
-                                    className="w-full p-2 border-indigo-200 bg-white rounded text-base text-center text-indigo-700 font-bold"
+                                    className="w-full p-1.5 sm:p-2 border-indigo-200 bg-white rounded text-sm sm:text-base text-center text-indigo-700 font-bold"
                                 />
                             </div>
                         ))}
@@ -950,15 +1167,15 @@ export default function App() {
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-2">
                     職能P 上限年数 {config.transitionConfig.enabled && <span className="text-indigo-600 ml-1">[現行]</span>}
                 </label>
-                <div className="grid grid-cols-4 gap-3">
+                <div className="grid grid-cols-4 gap-2 sm:gap-3">
                     {['type1','type2','type3','type4'].map((t, i) => (
                         <div key={t}>
-                            <span className="block text-[11px] text-slate-400 text-center mb-0.5">{['旧①','旧②','旧③','新'][i]}</span>
+                            <span className="block text-[10px] sm:text-[11px] text-slate-400 text-center mb-0.5">{['旧①','旧②','旧③','新'][i]}</span>
                             <input 
                                 type="number" min={30} max={47}
                                 value={(config.cutoffYears as any)[t]} 
                                 onChange={e => setConfig({...config, cutoffYears: {...config.cutoffYears, [t]: Number(e.target.value)}})} 
-                                className="w-full p-2 border-slate-300 rounded text-base text-center" 
+                                className="w-full p-1.5 sm:p-2 border-slate-300 rounded text-sm sm:text-base text-center" 
                             />
                         </div>
                     ))}
@@ -970,15 +1187,15 @@ export default function App() {
                     <label className="block text-xs font-bold text-indigo-600 uppercase mb-2">
                         職能P 上限年数 <span className="bg-indigo-600 text-white px-1.5 py-0.5 rounded text-[10px] ml-1">改定後</span>
                     </label>
-                    <div className="grid grid-cols-4 gap-3">
+                    <div className="grid grid-cols-4 gap-2 sm:gap-3">
                         {['type1','type2','type3','type4'].map((t, i) => (
                             <div key={t}>
-                                <span className="block text-[11px] text-indigo-400 text-center mb-0.5">{['旧①','旧②','旧③','新'][i]}</span>
+                                <span className="block text-[10px] sm:text-[11px] text-indigo-400 text-center mb-0.5">{['旧①','旧②','旧③','新'][i]}</span>
                                 <input 
                                     type="number" min={30} max={47}
                                     value={(config.cutoffYearsFuture as any)[t]} 
                                     onChange={e => setConfig({...config, cutoffYearsFuture: {...config.cutoffYearsFuture, [t]: Number(e.target.value)}})} 
-                                    className="w-full p-2 border-indigo-200 bg-white rounded text-base text-center text-indigo-700 font-bold"
+                                    className="w-full p-1.5 sm:p-2 border-indigo-200 bg-white rounded text-sm sm:text-base text-center text-indigo-700 font-bold"
                                 />
                             </div>
                         ))}
@@ -1055,110 +1272,130 @@ export default function App() {
     };
 
     return (
-        <div className="min-h-screen bg-slate-50 py-10 px-6 font-sans text-slate-800">
-            <div className="max-w-7xl mx-auto bg-white rounded-3xl shadow-xl overflow-hidden border border-slate-200">
+        <div className={`min-h-screen overflow-x-auto transition-colors duration-300 ${darkMode ? 'dark bg-slate-950' : 'bg-slate-50'} font-sans`}>
+            <div className="max-w-[1600px] mx-auto bg-white dark:bg-slate-900 shadow-2xl min-h-screen flex flex-col relative overflow-x-auto">
                 {/* Header */}
-                <div className="bg-slate-900 px-10 py-12 flex items-center justify-between no-print relative overflow-hidden">
+                <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-4 sm:p-10 flex flex-col sm:flex-row justify-between items-center gap-6 relative overflow-hidden no-print">
                     <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none">
-                        <div className="absolute top-[-50%] left-[-10%] w-[120%] h-[200%] bg-[radial-gradient(circle_at_50%_50%,#4f46e5,transparent_70%)]"></div>
+                        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-indigo-500 rounded-full blur-[120px]"></div>
+                        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-purple-500 rounded-full blur-[120px]"></div>
                     </div>
                     
-                    <div className="flex items-center gap-6 relative z-10">
-                        <div className="p-4 bg-white/10 rounded-2xl backdrop-blur-md border border-white/20 shadow-2xl">
-                            <Calculator className="w-12 h-12 text-white" />
+                    <div className="flex items-center gap-4 sm:gap-8 relative z-10 w-full sm:w-auto">
+                        <div className="p-3 sm:p-4 bg-white/10 rounded-xl sm:rounded-2xl backdrop-blur-md border border-white/20 shadow-2xl">
+                            <Calculator className="w-8 h-8 sm:w-12 sm:h-12 text-white" />
                         </div>
                         <div>
-                            <h1 className="text-4xl font-extrabold text-white tracking-tight mb-2">
+                            <h1 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight mb-1 sm:mb-2">
                                 比較シミュレーション <span className="text-indigo-400">2026</span>
                             </h1>
-                            <div className="flex items-center gap-4">
-                                <span className="text-slate-400 text-lg font-medium">京都バス 退職金試算システム Ver 2.0</span>
-                                <span className="bg-indigo-500/20 text-indigo-300 text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full border border-indigo-500/30">
-                                    A/B Pattern Analysis
-                                </span>
-                                <button 
-                                    onClick={() => setShowChatMode(true)}
-                                    className="bg-emerald-500/20 text-emerald-300 text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full border border-emerald-500/30 hover:bg-emerald-500/30 transition flex items-center gap-1"
-                                >
-                                    <MessageSquare className="w-3 h-3" />
-                                    AI Chat Mode
-                                </button>
+                            <div className="flex flex-wrap items-center gap-2 sm:gap-4">
+                                <span className="text-slate-400 text-sm sm:text-lg font-medium">京都バス 退職金試算システム Ver 2.0</span>
+                                <div className="flex items-center gap-2">
+                                    <span className="bg-indigo-500/20 text-indigo-300 text-[10px] sm:text-xs font-bold uppercase tracking-wider px-2 sm:px-3 py-1 rounded-full border border-indigo-500/30">
+                                        A/B Pattern Analysis
+                                    </span>
+                                    <button 
+                                        onClick={() => setShowChatMode(true)}
+                                        className="bg-emerald-500/20 text-emerald-300 text-[10px] sm:text-xs font-bold uppercase tracking-wider px-2 sm:px-3 py-1 rounded-full border border-emerald-500/30 hover:bg-emerald-500/30 transition flex items-center gap-1"
+                                    >
+                                        <MessageSquare className="w-3 h-3" />
+                                        AI Chat Mode
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
-                    <div className="flex flex-col items-end gap-2">
-                         <div className="flex items-center gap-3">
+                    <div className="flex flex-col items-end gap-2 w-full sm:w-auto relative z-10">
+                         <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto">
+                            <button 
+                                onClick={() => setDarkMode(!darkMode)}
+                                className="p-2.5 sm:p-3 bg-white/10 hover:bg-white/20 text-white rounded-xl border border-white/20 transition-all shadow-lg"
+                                title={darkMode ? "ライトモードに切り替え" : "ダークモードに切り替え"}
+                            >
+                                {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+                            </button>
                             <button 
                                 onClick={() => setShowHelp(true)}
-                                className="bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-400 hover:to-purple-400 text-white px-5 py-2.5 rounded-xl text-base flex items-center gap-2 transition no-print font-bold shadow-lg border border-white/20 hover:scale-105"
+                                className="flex-1 sm:flex-none bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-400 hover:to-purple-400 text-white px-4 sm:px-5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-sm sm:text-base flex items-center justify-center gap-2 transition no-print font-bold shadow-lg border border-white/20 hover:scale-105"
                             >
-                                <BookOpen className="w-5 h-5"/>
+                                <BookOpen className="w-4 h-4 sm:w-5 sm:h-5"/>
                                 <span className="hidden sm:inline">使用マニュアル</span>
+                                <span className="sm:hidden">マニュアル</span>
                             </button>
-                            <span className={`text-sm font-bold px-4 py-2 rounded-full border border-white/30 text-white ${status.includes('エラー') ? 'bg-red-500/50' : 'bg-white/20'}`}>
+                            <span className={`text-xs sm:text-sm font-bold px-3 sm:px-4 py-2 rounded-full border border-white/30 text-white ${status.includes('エラー') ? 'bg-red-500/50' : 'bg-white/20'}`}>
                                 {status}
                             </span>
                         </div>
                         {isCalculating && (
-                            <div className="w-40 bg-indigo-900/50 rounded-full h-2 overflow-hidden">
+                            <div className="w-full sm:w-40 bg-indigo-900/50 rounded-full h-1.5 sm:h-2 overflow-hidden">
                                 <div className="bg-emerald-400 h-full transition-all duration-300" style={{ width: `${progress}%` }}></div>
                             </div>
                         )}
                     </div>
                 </div>
 
-                <div className="p-8 space-y-10">
+                <div className="p-4 sm:p-8 space-y-10 dark:bg-slate-900">
                     {/* Section 1: Conditions & Compare Settings */}
                     <div className="no-print">
-                        <div className="flex justify-between items-center mb-6">
-                            <h3 className="font-bold text-slate-700 flex items-center gap-3 text-xl">
-                                <Sliders className="w-6 h-6 text-indigo-600" /> 計算条件の比較設定
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+                            <h3 className="font-bold text-slate-700 dark:text-slate-200 flex items-center gap-3 text-lg sm:text-xl">
+                                <Sliders className="w-5 h-5 sm:w-6 sm:h-6 text-indigo-600 dark:text-indigo-400" /> 計算条件の比較設定
                             </h3>
-                            <div className="flex items-center gap-4">
+                            <div className="flex items-center gap-4 w-full sm:w-auto">
                                 {data.length > 0 && (
                                     <button 
                                         onClick={handleRunSimulation} 
-                                        className="flex items-center gap-3 bg-gradient-to-br from-indigo-600 via-indigo-700 to-indigo-800 text-white px-10 py-5 rounded-2xl font-bold text-2xl shadow-xl hover:shadow-2xl hover:scale-105 hover:from-indigo-500 hover:to-indigo-700 transform duration-200 transition-all border border-indigo-400/20 ring-4 ring-indigo-500/10"
+                                        className="flex-1 sm:flex-none flex items-center justify-center gap-3 bg-gradient-to-br from-indigo-600 via-indigo-700 to-indigo-800 text-white px-6 sm:px-10 py-3 sm:py-5 rounded-xl sm:rounded-2xl font-bold text-lg sm:text-2xl shadow-xl hover:shadow-2xl hover:scale-105 hover:from-indigo-500 hover:to-indigo-700 transform duration-200 transition-all border border-indigo-400/20 ring-4 ring-indigo-500/10"
                                     >
-                                        <Play className="w-8 h-8 fill-current"/> 再計算する
+                                        <Play className="w-5 h-5 sm:w-8 sm:h-8 fill-current"/> 再計算する
                                     </button>
                                 )}
                                 {/* Copy Button Removed */}
                             </div>
                         </div>
-                        <div className="grid md:grid-cols-2 gap-8">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-8">
                             {renderSettingsPanel(configA, setConfigA, 'A')}
                             {renderSettingsPanel(configB, setConfigB, 'B')}
                         </div>
                     </div>
 
                     {/* Section 2: Data Input */}
-                    <div className="border-t border-slate-200 pt-8 no-print">
+                    <div className="border-t border-slate-200 dark:border-slate-700 pt-8 no-print">
                         <div className="grid md:grid-cols-2 gap-10">
-                            <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-center gap-4">
-                                <label className="flex items-center gap-4 cursor-pointer hover:bg-white p-4 rounded-xl transition border border-transparent hover:border-indigo-100 group">
-                                    <div className="p-3 bg-indigo-100 text-indigo-600 rounded-full group-hover:scale-110 transition-transform">
+                            <div className="bg-slate-50 dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-center gap-4">
+                                <div 
+                                    onClick={() => fileInputRef.current?.click()}
+                                    className="relative flex items-center gap-4 cursor-pointer hover:bg-white dark:hover:bg-slate-700 p-4 rounded-xl transition border border-transparent hover:border-indigo-100 dark:hover:border-indigo-900 group"
+                                >
+                                    <div className="p-3 bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 rounded-full group-hover:scale-110 transition-transform">
                                         <Database className="w-6 h-6"/>
                                     </div>
                                     <div>
-                                        <div className="font-bold text-slate-700 text-base">社員データ読込 (.xlsx/.csv)</div>
-                                        <div className="text-sm text-slate-400">現在: {data.length} 件</div>
+                                        <div className="font-bold text-slate-700 dark:text-slate-200 text-base">社員データ読込 (.xlsx/.csv)</div>
+                                        <div className="text-sm text-slate-400 dark:text-slate-500">現在: {data.length} 件</div>
                                     </div>
-                                    <input type="file" className="hidden" accept=".csv,.xlsx" onChange={handleDataFile} />
-                                </label>
+                                    <input 
+                                        type="file" 
+                                        ref={fileInputRef}
+                                        className="hidden" 
+                                        accept=".csv,.xlsx,.xls" 
+                                        onChange={handleDataFile} 
+                                    />
+                                </div>
                                 <div className="flex gap-3 justify-end items-center">
                                     {data.length > 0 && (
                                         <button 
                                             onClick={() => setShowAnalysis(!showAnalysis)}
-                                            className={`mr-auto text-sm flex items-center gap-2 px-4 py-2 rounded-lg border transition font-bold ${showAnalysis ? 'bg-indigo-100 text-indigo-700 border-indigo-200' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+                                            className={`mr-auto text-sm flex items-center gap-2 px-4 py-2 rounded-lg border transition font-bold ${showAnalysis ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800' : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600'}`}
                                         >
                                             <PieChart className="w-4 h-4" /> 
                                             {showAnalysis ? '分析を隠す' : 'データ分析'}
                                         </button>
                                     )}
-                                    <button onClick={handleDownloadTemplate} className="text-sm px-3 py-1.5 text-slate-600 hover:bg-white rounded font-medium">テンプレートDL</button>
-                                    {/* Sample Load Removed */}
-                                    <button onClick={handleClearData} className="text-sm px-3 py-1.5 text-red-500 hover:bg-red-50 rounded font-medium">クリア</button>
+                                    <button onClick={handleLoadSample} className="text-sm px-3 py-1.5 text-indigo-600 hover:bg-white dark:hover:bg-slate-700 rounded font-bold border border-indigo-100">サンプル読込</button>
+                                    <button onClick={handleDownloadTemplate} className="text-sm px-3 py-1.5 text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-700 rounded font-medium">テンプレートDL</button>
+                                    <button onClick={handleClearData} className="text-sm px-3 py-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded font-medium">クリア</button>
                                 </div>
                             </div>
 
@@ -1269,12 +1506,27 @@ export default function App() {
                         <p>&copy; 2025 Kyoto Bus Co., Ltd. / Retirement Allowance Simulation System Ver 2.0.0 (Compare Ed.)</p>
                     </div>
                     {error && (
-                        <div className="fixed bottom-6 right-6 bg-red-600 text-white p-5 rounded-xl shadow-lg flex items-center gap-4 animate-in fade-in slide-in-from-bottom-4 z-50">
-                            <AlertCircle className="w-6 h-6" />
+                        <div className="fixed bottom-6 right-6 bg-red-600 text-white p-5 rounded-xl shadow-lg flex items-center gap-4 animate-in fade-in slide-in-from-bottom-4 z-50 max-w-[90vw] sm:max-w-md">
+                            <AlertCircle className="w-6 h-6 shrink-0" />
                             <div>
                                 <p className="font-bold text-base">エラーが発生しました</p>
-                                <p className="text-sm opacity-90">{error}</p>
+                                <p className="text-sm opacity-90 whitespace-pre-wrap">{error}</p>
                             </div>
+                            <button onClick={() => setError(null)} className="ml-auto p-1 hover:bg-white/20 rounded">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                    )}
+                    {success && (
+                        <div className="fixed bottom-6 right-6 bg-emerald-600 text-white p-5 rounded-xl shadow-lg flex items-center gap-4 animate-in fade-in slide-in-from-bottom-4 z-50 max-w-[90vw] sm:max-w-md">
+                            <CheckCircle2 className="w-6 h-6 shrink-0" />
+                            <div>
+                                <p className="font-bold text-base">成功</p>
+                                <p className="text-sm opacity-90">{success}</p>
+                            </div>
+                            <button onClick={() => setSuccess(null)} className="ml-auto p-1 hover:bg-white/20 rounded">
+                                <X className="w-5 h-5" />
+                            </button>
                         </div>
                     )}
                 </div>
@@ -1323,6 +1575,19 @@ export default function App() {
                     </button>
                 </div>
             </div>
+            {/* Confirm Modal */}
+            {confirmAction && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4">
+                    <div className="bg-white dark:bg-slate-800 rounded-xl p-6 max-w-sm w-full shadow-2xl">
+                        <h3 className="text-lg font-bold mb-2">{confirmAction.title}</h3>
+                        <p className="text-slate-600 dark:text-slate-400 mb-6">{confirmAction.message}</p>
+                        <div className="flex gap-3 justify-end">
+                            <button onClick={() => setConfirmAction(null)} className="px-4 py-2 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg">キャンセル</button>
+                            <button onClick={confirmAction.onConfirm} className="px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600">実行する</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

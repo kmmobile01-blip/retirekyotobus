@@ -38,7 +38,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({ onClose }) => {
                 </div>
 
                 {/* Tabs */}
-                <div className="flex overflow-x-auto border-b border-slate-200 bg-slate-50 px-2 sm:px-6 hide-scrollbar">
+                <div className="flex overflow-x-auto border-b border-slate-200 bg-slate-50 px-2 sm:px-6 hide-scrollbar touch-pan-y">
                     {tabs.map((tab) => (
                         <button
                             key={tab.id}

@@ -19,13 +19,26 @@ interface Message {
 }
 
 export const AIChatMode: React.FC<AIChatModeProps> = ({ isOpen, onClose, data, configA, configB }) => {
-    const [messages, setMessages] = useState<Message[]>([
-        { 
-            role: 'model', 
-            text: "こんにちは！京都バス退職金シミュレーションAIコンサルタントです。制度改定案の比較や、特定の社員への影響、将来の費用予測など、何でもお気軽にご相談ください。", 
-            timestamp: new Date() 
+    const [messages, setMessages] = useState<Message[]>(() => {
+        const saved = localStorage.getItem('retirement-sim-chat-messages');
+        if (saved) {
+            try {
+                const parsed = JSON.parse(saved);
+                return parsed.map((m: any) => ({ ...m, timestamp: new Date(m.timestamp) }));
+            } catch (e) { console.error(e); }
         }
-    ]);
+        return [
+            { 
+                role: 'model', 
+                text: "こんにちは！京都バス退職金シミュレーションAIコンサルタントです。制度改定案の比較や、特定の社員への影響、将来の費用予測など、何でもお気軽にご相談ください。", 
+                timestamp: new Date() 
+            }
+        ];
+    });
+
+    useEffect(() => {
+        localStorage.setItem('retirement-sim-chat-messages', JSON.stringify(messages));
+    }, [messages]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [isMaximized, setIsMaximized] = useState(false);

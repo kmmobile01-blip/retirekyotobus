@@ -307,13 +307,48 @@ const parseResponseAndExtractData = (text: string): { csvMap: CsvMap, proposedSe
 };
 
 export const AIAnalysisReport: React.FC<AIAnalysisReportProps> = ({ data, configA, configB, onApplyProposal }) => {
+    const [notification, setNotification] = useState<{ type: 'success' | 'error' | 'info', message: string } | null>(null);
     // Report Content State (Displayed as main report)
-    const [reportContent, setReportContent] = useState<string | null>(null);
-    const [csvMap, setCsvMap] = useState<CsvMap>({});
-    const [proposedSettings, setProposedSettings] = useState<ProposedSettings | null>(null);
+    const [reportContent, setReportContent] = useState<string | null>(() => {
+        return localStorage.getItem('retirement-sim-report-content');
+    });
+    const [csvMap, setCsvMap] = useState<CsvMap>(() => {
+        const saved = localStorage.getItem('retirement-sim-report-csvmap');
+        return saved ? JSON.parse(saved) : {};
+    });
+    const [proposedSettings, setProposedSettings] = useState<ProposedSettings | null>(() => {
+        const saved = localStorage.getItem('retirement-sim-report-proposed');
+        return saved ? JSON.parse(saved) : null;
+    });
     
     // Chat State
-    const [messages, setMessages] = useState<ChatMessage[]>([]);
+    const [messages, setMessages] = useState<ChatMessage[]>(() => {
+        const saved = localStorage.getItem('retirement-sim-report-messages');
+        if (saved) {
+            try {
+                const parsed = JSON.parse(saved);
+                return parsed.map((m: any) => ({ ...m, timestamp: new Date(m.timestamp) }));
+            } catch (e) { console.error(e); }
+        }
+        return [];
+    });
+
+    useEffect(() => {
+        if (reportContent) localStorage.setItem('retirement-sim-report-content', reportContent);
+        else localStorage.removeItem('retirement-sim-report-content');
+    }, [reportContent]);
+
+    useEffect(() => {
+        localStorage.setItem('retirement-sim-report-csvmap', JSON.stringify(csvMap));
+    }, [csvMap]);
+
+    useEffect(() => {
+        localStorage.setItem('retirement-sim-report-proposed', JSON.stringify(proposedSettings));
+    }, [proposedSettings]);
+
+    useEffect(() => {
+        localStorage.setItem('retirement-sim-report-messages', JSON.stringify(messages));
+    }, [messages]);
     const [chatInput, setChatInput] = useState('');
     const chatEndRef = useRef<HTMLDivElement>(null);
     const fileUploadRef = useRef<HTMLInputElement>(null);
@@ -386,58 +421,65 @@ export const AIAnalysisReport: React.FC<AIAnalysisReportProps> = ({ data, config
     const [isChatVisible, setIsChatVisible] = useState(true); 
     
     // デフォルトは全て空欄・チェックなしに変更
-    const [constraints, setConstraints] = useState<Record<'common'|'type1'|'type2'|'type3'|'type4', ConstraintType>>({
-        common: {
-            fixedRetirementAge: '',
-            allowPointTableChange: false,
-            allowEvalPointChange: false,
-            allowCoefChange: false,
-            maxRankPointYears: '',
-            guaranteePreRevision: false,
-            guaranteeBPlan: false,
-            customInstruction: ''
-        },
-        type1: {
-            fixedRetirementAge: '',
-            allowPointTableChange: false,
-            allowEvalPointChange: false,
-            allowCoefChange: false,
-            maxRankPointYears: '',
-            guaranteePreRevision: false,
-            guaranteeBPlan: false,
-            customInstruction: ''
-        },
-        type2: {
-            fixedRetirementAge: '',
-            allowPointTableChange: false,
-            allowEvalPointChange: false,
-            allowCoefChange: false,
-            maxRankPointYears: '',
-            guaranteePreRevision: false,
-            guaranteeBPlan: false,
-            customInstruction: ''
-        },
-        type3: {
-            fixedRetirementAge: '',
-            allowPointTableChange: false,
-            allowEvalPointChange: false,
-            allowCoefChange: false,
-            maxRankPointYears: '',
-            guaranteePreRevision: false,
-            guaranteeBPlan: false,
-            customInstruction: ''
-        },
-        type4: {
-            fixedRetirementAge: '',
-            allowPointTableChange: false,
-            allowEvalPointChange: false,
-            allowCoefChange: false,
-            maxRankPointYears: '',
-            guaranteePreRevision: false,
-            guaranteeBPlan: false,
-            customInstruction: ''
-        }
+    const [constraints, setConstraints] = useState<Record<'common'|'type1'|'type2'|'type3'|'type4', ConstraintType>>(() => {
+        const saved = localStorage.getItem('retirement-sim-report-constraints');
+        return saved ? JSON.parse(saved) : {
+            common: {
+                fixedRetirementAge: '',
+                allowPointTableChange: false,
+                allowEvalPointChange: false,
+                allowCoefChange: false,
+                maxRankPointYears: '',
+                guaranteePreRevision: false,
+                guaranteeBPlan: false,
+                customInstruction: ''
+            },
+            type1: {
+                fixedRetirementAge: '',
+                allowPointTableChange: false,
+                allowEvalPointChange: false,
+                allowCoefChange: false,
+                maxRankPointYears: '',
+                guaranteePreRevision: false,
+                guaranteeBPlan: false,
+                customInstruction: ''
+            },
+            type2: {
+                fixedRetirementAge: '',
+                allowPointTableChange: false,
+                allowEvalPointChange: false,
+                allowCoefChange: false,
+                maxRankPointYears: '',
+                guaranteePreRevision: false,
+                guaranteeBPlan: false,
+                customInstruction: ''
+            },
+            type3: {
+                fixedRetirementAge: '',
+                allowPointTableChange: false,
+                allowEvalPointChange: false,
+                allowCoefChange: false,
+                maxRankPointYears: '',
+                guaranteePreRevision: false,
+                guaranteeBPlan: false,
+                customInstruction: ''
+            },
+            type4: {
+                fixedRetirementAge: '',
+                allowPointTableChange: false,
+                allowEvalPointChange: false,
+                allowCoefChange: false,
+                maxRankPointYears: '',
+                guaranteePreRevision: false,
+                guaranteeBPlan: false,
+                customInstruction: ''
+            }
+        };
     });
+
+    useEffect(() => {
+        localStorage.setItem('retirement-sim-report-constraints', JSON.stringify(constraints));
+    }, [constraints]);
 
     const updateConstraint = (key: keyof ConstraintType, value: any) => {
         setConstraints(prev => ({
@@ -912,7 +954,10 @@ Year,T1,T2,T3,T4
                 return prefix + `【参照ファイル: ${file.name}】\n\`\`\`\n${content}\n\`\`\`\n`;
             });
         };
-        reader.onerror = () => alert("ファイルの読み込みに失敗しました。");
+        reader.onerror = () => {
+            setNotification({ type: 'error', message: "ファイルの読み込みに失敗しました。" });
+            setTimeout(() => setNotification(null), 3000);
+        };
         reader.readAsText(file);
         e.target.value = ''; // Reset
     };
@@ -1225,7 +1270,8 @@ Year,T1,T2,T3,T4
             pdf.save(`AI分析レポート_${new Date().toISOString().slice(0,10)}.pdf`);
         } catch (e) {
             console.error(e);
-            alert("PDF生成に失敗しました。印刷機能(PDF保存)をご利用ください。");
+            setNotification({ type: 'error', message: "PDF生成に失敗しました。印刷機能(PDF保存)をご利用ください。" });
+            setTimeout(() => setNotification(null), 5000);
         } finally {
             setIsPdfGenerating(false);
         }
@@ -1240,7 +1286,7 @@ Year,T1,T2,T3,T4
             if (part.startsWith('```')) {
                 const content = part.replace(/^```[a-z]*\n?|```$/g, '');
                 return (
-                    <div key={idx} className="bg-slate-800 text-slate-100 p-3 rounded my-2 text-xs font-mono overflow-x-auto">
+                    <div key={idx} className="bg-slate-800 text-slate-100 p-3 rounded my-2 text-xs font-mono overflow-x-auto touch-pan-y">
                         <pre>{content}</pre>
                     </div>
                 );
@@ -1279,7 +1325,8 @@ Year,T1,T2,T3,T4
     };
 
     return (
-        <div className="mt-12 border-t-2 border-slate-200 pt-10 print-break-inside-avoid">
+        <>
+            <div className="mt-12 border-t-2 border-slate-200 pt-10 print-break-inside-avoid">
             <div className="flex flex-col sm:flex-row items-center justify-between mb-8 gap-6 no-print">
                 <div className="flex items-center gap-4">
                     <div className="p-3 bg-purple-100 rounded-xl text-purple-600">
@@ -1351,7 +1398,7 @@ Year,T1,T2,T3,T4
                     
                     <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50">
                         {/* Tabs */}
-                        <div className="flex border-b border-slate-200 bg-white">
+                        <div className="flex border-b border-slate-200 bg-white overflow-x-auto scrollbar-hide">
                             {[
                                 { k: 'common', l: '全制度共通' },
                                 { k: 'type1', l: '旧制度①' },
@@ -1771,5 +1818,19 @@ Year,T1,T2,T3,T4
                 </div>
             )}
         </div>
+        {notification && (
+            <div className={`fixed bottom-4 right-4 z-[100] p-4 rounded-xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-300 ${
+                notification.type === 'success' ? 'bg-emerald-500 text-white' : 
+                notification.type === 'error' ? 'bg-red-500 text-white' : 'bg-indigo-500 text-white'
+            }`}>
+                {notification.type === 'success' ? <CheckCircle className="w-5 h-5" /> : 
+                 notification.type === 'error' ? <AlertCircle className="w-5 h-5" /> : <Loader2 className="w-5 h-5 animate-spin" />}
+                <span className="font-medium">{notification.message}</span>
+                <button onClick={() => setNotification(null)} className="ml-2 hover:bg-white/20 rounded p-0.5 transition-colors">
+                    <X className="w-4 h-4" />
+                </button>
+            </div>
+        )}
+        </>
     );
 };

@@ -14,6 +14,7 @@ export const AnnualCostChart: React.FC<AnnualCostChartProps> = ({ data }) => {
     const [isCopying, setIsCopying] = useState(false);
     const [isDownloading, setIsDownloading] = useState(false);
     const [isExcelExporting, setIsExcelExporting] = useState(false);
+    const [notification, setNotification] = useState<{ type: 'success' | 'error', message: string } | null>(null);
 
     // --- Pre-calculation for Financial Table ---
     const financialData = useMemo(() => {
@@ -141,7 +142,10 @@ export const AnnualCostChart: React.FC<AnnualCostChartProps> = ({ data }) => {
             link.download = `引当金繰入額推移_${new Date().toISOString().slice(0,10)}.png`;
             link.href = canvas.toDataURL('image/png');
             link.click();
-        } else { alert('画像の生成に失敗しました。'); }
+        } else { 
+            setNotification({ type: 'error', message: '画像の生成に失敗しました。' });
+            setTimeout(() => setNotification(null), 3000);
+        }
         setIsDownloading(false);
     };
 
@@ -156,7 +160,11 @@ export const AnnualCostChart: React.FC<AnnualCostChartProps> = ({ data }) => {
                         const item = new ClipboardItem({ 'image/png': blob });
                         await navigator.clipboard.write([item]);
                         setTimeout(() => setIsCopying(false), 2000);
-                    } catch (err) { alert('クリップボードへのコピーに失敗しました。'); setIsCopying(false); }
+                    } catch (err) { 
+                        setNotification({ type: 'error', message: 'クリップボードへのコピーに失敗しました。' });
+                        setTimeout(() => setNotification(null), 3000);
+                        setIsCopying(false); 
+                    }
                 });
             } else { setIsCopying(false); }
         } catch (e) { setIsCopying(false); }
@@ -210,8 +218,12 @@ export const AnnualCostChart: React.FC<AnnualCostChartProps> = ({ data }) => {
 
             XLSX.utils.book_append_sheet(wb, ws, "財務推移詳細");
             XLSX.writeFile(wb, `退職金財務シミュレーション_${new Date().toISOString().slice(0,10)}.xlsx`);
-        } catch (e: any) { alert("Excel生成失敗: " + e.message); } 
-        finally { setIsExcelExporting(false); }
+        } catch (e: any) { 
+            setNotification({ type: 'error', message: "Excel生成失敗: " + e.message });
+            setTimeout(() => setNotification(null), 3000);
+        } finally {
+            setIsExcelExporting(false);
+        }
     };
 
     const renderCell = (val: number, type: 'currency'|'number', colorClass: string, key: string | number, prefix: string = '') => (
@@ -280,15 +292,15 @@ export const AnnualCostChart: React.FC<AnnualCostChartProps> = ({ data }) => {
             </div>
             
             {/* Graph */}
-            <div className="overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-slate-200">
-                <svg width={Math.max(width, 600)} height={height + 60} className="mx-auto">
+            <div className="overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-slate-200 touch-pan-y">
+                <svg width={Math.max(width, 600)} height={height + 60} className="mx-auto pointer-events-auto">
                     {[0, 0.25, 0.5, 0.75, 1].map((ratio, i) => {
                         const y = height - (height * ratio);
                         const value = yAxisMax * ratio;
                         return (
                             <g key={i}>
                                 <line x1={marginLeft} y1={y} x2={width} y2={y} stroke="#e2e8f0" strokeDasharray="4 4" />
-                                <text x={marginLeft - 8} y={y + 4} textAnchor="end" className="text-xs fill-slate-400 font-mono">
+                                <text x={marginLeft - 8} y={y + 4} textAnchor="end" className="text-xs fill-slate-400 font-mono pointer-events-none">
                                     {(value / 1000000).toFixed(1)}M
                                 </text>
                             </g>
@@ -317,10 +329,10 @@ export const AnnualCostChart: React.FC<AnnualCostChartProps> = ({ data }) => {
                                 <rect x={x + barWidth + 4} y={height - sB.h1 - sB.h2 - sB.h3} width={barWidth} height={sB.h3} fill={colors.type3} />
                                 <rect x={x + barWidth + 4} y={height - sB.h1 - sB.h2 - sB.h3 - sB.h4} width={barWidth} height={sB.h4} fill={colors.type4} />
                                 
-                                <text textAnchor="middle" x={x + barGroupWidth / 2} y={height + 20} className={`text-xs font-bold ${isHovered ? 'fill-indigo-700' : 'fill-slate-500'}`}>{d.year}</text>
-                                <text textAnchor="middle" x={x + barGroupWidth / 2} y={height + 35} className="text-[10px] fill-slate-400">{getWareki(d.year)}</text>
-                                <text textAnchor="middle" x={x + barWidth/2} y={height + 5} className="text-[10px] font-bold fill-indigo-600">A</text>
-                                <text textAnchor="middle" x={x + barWidth + 4 + barWidth/2} y={height + 5} className="text-[10px] font-bold fill-emerald-600">B</text>
+                                <text textAnchor="middle" x={x + barGroupWidth / 2} y={height + 20} className={`text-xs font-bold pointer-events-none ${isHovered ? 'fill-indigo-700' : 'fill-slate-500'}`}>{d.year}</text>
+                                <text textAnchor="middle" x={x + barGroupWidth / 2} y={height + 35} className="text-[10px] fill-slate-400 pointer-events-none">{getWareki(d.year)}</text>
+                                <text textAnchor="middle" x={x + barWidth/2} y={height + 5} className="text-[10px] font-bold fill-indigo-600 pointer-events-none">A</text>
+                                <text textAnchor="middle" x={x + barWidth + 4 + barWidth/2} y={height + 5} className="text-[10px] font-bold fill-emerald-600 pointer-events-none">B</text>
                             </g>
                         );
                     })}
@@ -329,7 +341,7 @@ export const AnnualCostChart: React.FC<AnnualCostChartProps> = ({ data }) => {
             </div>
 
             {/* Detailed Table */}
-            <div className="mt-10 overflow-x-auto">
+            <div className="mt-10 overflow-x-auto touch-pan-y">
                 <table className="w-full text-right text-base border-collapse min-w-max">
                     <thead>
                         <tr className="bg-slate-100 text-slate-700 border-b border-slate-200">
@@ -439,6 +451,15 @@ export const AnnualCostChart: React.FC<AnnualCostChartProps> = ({ data }) => {
                     </tbody>
                 </table>
             </div>
+            {/* Notification */}
+            {notification && (
+                <div className={`fixed bottom-4 right-4 z-[100] p-4 rounded-xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-300 ${
+                    notification.type === 'success' ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white'
+                }`}>
+                    {notification.type === 'success' ? <Check className="w-5 h-5" /> : <BarChart3 className="w-5 h-5 animate-pulse" />}
+                    <span className="font-medium">{notification.message}</span>
+                </div>
+            )}
         </div>
     );
 };

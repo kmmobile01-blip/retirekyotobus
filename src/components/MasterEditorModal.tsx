@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import Papa from 'papaparse';
 import { X, Save, RotateCcw, Table as TableIcon, Layers, BarChart, Upload, FileUp, Clipboard, FileDown, CheckCircle, AlertTriangle } from 'lucide-react';
 import { SimulationConfig, TableRowT1, TableRowT2, CoefSettings } from '../types';
@@ -17,15 +17,43 @@ type TabKey = 'masterData1_1' | 'masterData1_2' | 'masterData1_3' | 'masterData2
 type InputMode = 'incremental' | 'cumulative'; // 単年度(増分) or 累計
 
 export const MasterEditorModal: React.FC<MasterEditorModalProps> = ({ config, defaultConfig, onSave, onClose, initialTab = 'masterData2' }) => {
-    const [localConfig, setLocalConfig] = useState<SimulationConfig>(deepClone(config));
-    const [activeTab, setActiveTab] = useState<TabKey>(initialTab);
+    const [localConfig, setLocalConfig] = useState<SimulationConfig>(() => {
+        const saved = localStorage.getItem('retirement-sim-editing-config');
+        if (saved) {
+            try {
+                const parsed = JSON.parse(saved);
+                if (parsed.transitionConfig?.date) parsed.transitionConfig.date = new Date(parsed.transitionConfig.date);
+                return parsed;
+            } catch (e) { console.error(e); }
+        }
+        return deepClone(config);
+    });
+    const [activeTab, setActiveTab] = useState<TabKey>(() => {
+        const saved = localStorage.getItem('retirement-sim-editing-tab');
+        return (saved as TabKey) || initialTab;
+    });
+
+    useEffect(() => {
+        localStorage.setItem('retirement-sim-editing-config', JSON.stringify(localConfig));
+    }, [localConfig]);
+
+    useEffect(() => {
+        localStorage.setItem('retirement-sim-editing-tab', activeTab);
+    }, [activeTab]);
     const [inputMode, setInputMode] = useState<InputMode>('incremental'); // Default to incremental
+    const [notification, setNotification] = useState<{type: 'success' | 'error' | 'warning', message: string} | null>(null);
     
     // Future Master用のサブステート
     const [futureSubTab, setFutureSubTab] = useState<'type1' | 'type2' | 'type3' | 'type4'>('type4');
     const [futureDataType, setFutureDataType] = useState<'table' | 'coef' | 'params'>('table');
 
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const [confirmAction, setConfirmAction] = useState<{
+        title: string;
+        message: string;
+        onConfirm: () => void;
+    } | null>(null);
 
     // --- Save Handler with Confirmation ---
     const handleSave = () => {
@@ -100,46 +128,64 @@ export const MasterEditorModal: React.FC<MasterEditorModalProps> = ({ config, de
             ? `以下の変更を適用して再計算を行いますか？\n\n${changes.join('\n')}\n\n(合計 ${totalDiffCount} 箇所のマスタ値変更)`
             : "変更箇所は検出されませんでした。\n設定を終了しますか？";
 
-        if (window.confirm(message)) {
-            onSave(localConfig);
-            onClose();
-        }
+        setConfirmAction({
+            title: '設定の保存',
+            message: message,
+            onConfirm: () => {
+                onSave(localConfig);
+                localStorage.removeItem('retirement-sim-editing-config');
+                localStorage.removeItem('retirement-sim-editing-tab');
+                onClose();
+                setConfirmAction(null);
+            }
+        });
+    };
+
+    const handleClose = () => {
+        localStorage.removeItem('retirement-sim-editing-config');
+        localStorage.removeItem('retirement-sim-editing-tab');
+        onClose();
     };
 
     const handleResetTab = () => {
-        if(window.confirm('現在のタブの設定を初期値に戻しますか？')) {
-            if (activeTab === 'future') {
-                if (futureDataType === 'table') {
+        setConfirmAction({
+            title: 'タブのリセット',
+            message: '現在のタブの設定を初期値に戻しますか？',
+            onConfirm: () => {
+                if (activeTab === 'future') {
+                    if (futureDataType === 'table') {
+                        setLocalConfig(prev => ({
+                            ...prev,
+                            masterDataFuture: {
+                                ...prev.masterDataFuture,
+                                [futureSubTab]: deepClone(defaultConfig.masterDataFuture[futureSubTab])
+                            }
+                        }));
+                    } else if (futureDataType === 'coef') {
+                         setLocalConfig(prev => ({
+                            ...prev,
+                            coefSettingsFuture: {
+                                ...prev.coefSettingsFuture,
+                                [futureSubTab]: deepClone(defaultConfig.coefSettingsFuture[futureSubTab])
+                            }
+                        }));
+                    } else {
+                         setLocalConfig(prev => ({
+                            ...prev,
+                            retirementAgesFuture: deepClone(defaultConfig.retirementAgesFuture),
+                            cutoffYearsFuture: deepClone(defaultConfig.cutoffYearsFuture),
+                            defaultYearlyEvalFuture: defaultConfig.defaultYearlyEvalFuture
+                        }));
+                    }
+                } else {
                     setLocalConfig(prev => ({
                         ...prev,
-                        masterDataFuture: {
-                            ...prev.masterDataFuture,
-                            [futureSubTab]: deepClone(defaultConfig.masterDataFuture[futureSubTab])
-                        }
-                    }));
-                } else if (futureDataType === 'coef') {
-                     setLocalConfig(prev => ({
-                        ...prev,
-                        coefSettingsFuture: {
-                            ...prev.coefSettingsFuture,
-                            [futureSubTab]: deepClone(defaultConfig.coefSettingsFuture[futureSubTab])
-                        }
-                    }));
-                } else {
-                     setLocalConfig(prev => ({
-                        ...prev,
-                        retirementAgesFuture: deepClone(defaultConfig.retirementAgesFuture),
-                        cutoffYearsFuture: deepClone(defaultConfig.cutoffYearsFuture),
-                        defaultYearlyEvalFuture: defaultConfig.defaultYearlyEvalFuture
+                        [activeTab]: deepClone(defaultConfig[activeTab as keyof SimulationConfig])
                     }));
                 }
-            } else {
-                setLocalConfig(prev => ({
-                    ...prev,
-                    [activeTab]: deepClone(defaultConfig[activeTab as keyof SimulationConfig])
-                }));
+                setConfirmAction(null);
             }
-        }
+        });
     };
 
     // --- CSV Export Logic ---
@@ -211,10 +257,12 @@ export const MasterEditorModal: React.FC<MasterEditorModalProps> = ({ config, de
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
+            setNotification({ type: 'success', message: `${fileName} をエクスポートしました` });
+            setTimeout(() => setNotification(null), 3000);
 
         } catch (e: any) {
             console.error(e);
-            alert("エクスポート中にエラーが発生しました: " + e.message);
+            setNotification({ type: 'error', message: "エクスポート中にエラーが発生しました: " + e.message });
         }
     };
 
@@ -280,13 +328,13 @@ export const MasterEditorModal: React.FC<MasterEditorModalProps> = ({ config, de
                 complete: (results: any) => {
                     const data = results.data as any[];
                     if (!data || data.length === 0) {
-                        alert('有効なデータが見つかりませんでした。');
+                        setNotification({ type: 'error', message: '有効なデータが見つかりませんでした。' });
                         return;
                     }
                     processImportedData(data);
                 },
                 error: (err: any) => {
-                    alert('CSV読み込みエラー: ' + err.message);
+                    setNotification({ type: 'error', message: 'CSV読み込みエラー: ' + err.message });
                 }
             });
         };
@@ -299,7 +347,7 @@ export const MasterEditorModal: React.FC<MasterEditorModalProps> = ({ config, de
         try {
             const text = await navigator.clipboard.readText();
             if (!text) {
-                alert("クリップボードが空です");
+                setNotification({ type: 'warning', message: "クリップボードが空です" });
                 return;
             }
             
@@ -315,18 +363,18 @@ export const MasterEditorModal: React.FC<MasterEditorModalProps> = ({ config, de
                 complete: (results: any) => {
                     const data = results.data as any[];
                     if (!data || data.length === 0) {
-                        alert('データを解析できませんでした。フォーマットを確認してください。');
+                        setNotification({ type: 'error', message: 'データを解析できませんでした。フォーマットを確認してください。' });
                         return;
                     }
                     processImportedData(data);
                 },
                 error: (err: any) => {
-                    alert('解析エラー: ' + err.message);
+                    setNotification({ type: 'error', message: '解析エラー: ' + err.message });
                 }
             });
         } catch (err) {
             console.error(err);
-            alert("クリップボードからの読み取りに失敗しました。ブラウザの権限設定を確認してください。");
+            setNotification({ type: 'error', message: "クリップボードからの読み取りに失敗しました。ブラウザの権限設定を確認してください。" });
         }
     };
 
@@ -497,10 +545,10 @@ export const MasterEditorModal: React.FC<MasterEditorModalProps> = ({ config, de
                     setLocalConfig(prev => ({ ...prev, [activeTab]: mappedData as TableRowT1[] }));
                 }
             }
-            alert(`データを正常に読み込みました (対象: ${rows.length}行)。\n変更箇所は赤色で表示されます。\n内容を確認し「変更を適用」ボタンを押してください。`);
+            setNotification({ type: 'success', message: `データを正常に読み込みました (対象: ${rows.length}行)。\n変更箇所は赤色で表示されます。\n内容を確認し「変更を適用」ボタンを押してください。` });
         } catch (e: any) {
             console.error(e);
-            alert('データ読み込みエラー: ' + e.message);
+            setNotification({ type: 'error', message: 'データ読み込みエラー: ' + e.message });
         }
     };
 
@@ -996,73 +1044,110 @@ export const MasterEditorModal: React.FC<MasterEditorModalProps> = ({ config, de
     const showInputModeToggle = activeTab !== 'coefSettings' && !(activeTab === 'future' && (futureDataType === 'coef' || futureDataType === 'params'));
 
     return (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-6 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl h-[90vh] flex flex-col overflow-hidden">
-                <input type="file" ref={fileInputRef} className="hidden" accept=".csv" onChange={handleFileChange} />
-                
-                <div className="bg-slate-800 text-white px-8 py-5 flex justify-between items-center shrink-0">
-                    <div className="flex items-center gap-3 font-bold text-xl">
-                        <TableIcon className="w-6 h-6 text-indigo-300" />
-                        マスタデータ編集：{config.label}
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-2 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white w-full max-w-6xl h-full max-h-[95vh] rounded-xl sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden border border-slate-200 relative">
+                <input 
+                    type="file" 
+                    ref={fileInputRef} 
+                    className="absolute w-0 h-0 opacity-0 pointer-events-none" 
+                    accept=".csv,text/csv,application/vnd.ms-excel" 
+                    onChange={handleFileChange} 
+                />
+
+                {notification && (
+                    <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[100] animate-in fade-in slide-in-from-top-4 duration-300">
+                        <div className={`px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 border ${
+                            notification.type === 'error' ? 'bg-red-600 border-red-500 text-white' : 
+                            notification.type === 'warning' ? 'bg-amber-500 border-amber-400 text-white' :
+                            'bg-emerald-600 border-emerald-500 text-white'
+                        }`}>
+                            {notification.type === 'error' ? <AlertTriangle className="w-5 h-5" /> : <CheckCircle className="w-5 h-5" />}
+                            <span className="text-sm font-bold whitespace-pre-wrap">{notification.message}</span>
+                            <button onClick={() => setNotification(null)} className="ml-2 hover:bg-white/20 p-1 rounded">
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
                     </div>
-                    <div className="flex items-center gap-4">
+                )}
+                
+                <div className="bg-slate-800 text-white px-4 sm:px-8 py-3 sm:py-5 flex justify-between items-center shrink-0">
+                    <div className="flex items-center gap-2 sm:gap-3 font-bold text-base sm:text-xl">
+                        <TableIcon className="w-5 h-5 sm:w-6 sm:h-6 text-indigo-300" />
+                        <span className="truncate">マスタ編集：{config.label}</span>
+                    </div>
+                    <div className="flex items-center gap-2 sm:gap-4">
                         {showInputModeToggle && (
                             <div className="bg-slate-700 rounded-lg p-0.5 flex items-center shadow-inner no-print">
                                 <button
                                     onClick={() => setInputMode('incremental')}
-                                    className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-1.5 transition ${inputMode === 'incremental' ? 'bg-indigo-500 text-white shadow-sm' : 'text-slate-300 hover:text-white'}`}
+                                    className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded-md text-[10px] sm:text-xs font-bold flex items-center gap-1 transition ${inputMode === 'incremental' ? 'bg-indigo-500 text-white shadow-sm' : 'text-slate-300 hover:text-white'}`}
                                 >
-                                    <BarChart className="w-3.5 h-3.5"/> 単年度(増分)
+                                    <BarChart className="w-3 sm:w-3.5 h-3 sm:h-3.5"/> <span className="hidden xs:inline">単年度</span>
                                 </button>
                                 <button
                                     onClick={() => setInputMode('cumulative')}
-                                    className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-1.5 transition ${inputMode === 'cumulative' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-300 hover:text-white'}`}
+                                    className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded-md text-[10px] sm:text-xs font-bold flex items-center gap-1 transition ${inputMode === 'cumulative' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-300 hover:text-white'}`}
                                 >
-                                    <Layers className="w-3.5 h-3.5"/> 累計
+                                    <Layers className="w-3 sm:w-3.5 h-3 sm:h-3.5"/> <span className="hidden xs:inline">累計</span>
                                 </button>
                             </div>
                         )}
-                        <button onClick={onClose} className="hover:bg-slate-700 p-2 rounded-full transition">
-                            <X className="w-6 h-6" />
+                        <button onClick={handleClose} className="hover:bg-slate-700 p-1.5 sm:p-2 rounded-full transition">
+                            <X className="w-5 h-5 sm:w-6 sm:h-6" />
                         </button>
                     </div>
                 </div>
 
                 {/* Tabs */}
-                <div className="flex border-b border-slate-200 bg-slate-50 overflow-x-auto shrink-0">
+                <div className="flex border-b border-slate-200 bg-slate-50 overflow-x-auto shrink-0 touch-pan-y scrollbar-default">
                     {TABS.map(tab => (
                         <button
                             key={tab.key}
                             onClick={() => setActiveTab(tab.key as TabKey)}
-                            className={`px-5 py-4 text-base font-bold whitespace-nowrap transition border-r border-slate-200 ${activeTab === tab.key ? 'bg-white text-indigo-600 border-b-2 border-b-indigo-600' : 'text-slate-500 hover:bg-slate-100'}`}
+                            className={`px-3 sm:px-5 py-3 sm:py-4 text-xs sm:text-base font-bold whitespace-nowrap transition border-r border-slate-200 ${activeTab === tab.key ? 'bg-white text-indigo-600 border-b-2 border-b-indigo-600' : 'text-slate-500 hover:bg-slate-100'}`}
                         >
                             {tab.label}
                         </button>
                     ))}
                     <div className="flex-1"></div>
-                     <button onClick={handleResetTab} className="px-5 py-4 text-sm font-bold text-slate-400 hover:text-orange-600 flex items-center gap-2 transition">
-                        <RotateCcw className="w-4 h-4"/> このシートをリセット
+                     <button onClick={handleResetTab} className="px-3 sm:px-5 py-3 sm:py-4 text-[10px] sm:text-sm font-bold text-slate-400 hover:text-orange-600 flex items-center gap-1 sm:gap-2 transition whitespace-nowrap">
+                        <RotateCcw className="w-3 h-3 sm:w-4 sm:h-4"/> <span className="hidden sm:inline">リセット</span>
                     </button>
                 </div>
 
-                <div className="flex-1 p-8 overflow-hidden bg-white flex flex-col">
-                    {activeTab === 'coefSettings' ? renderCoefTable(localConfig.coefSettings, false) : 
-                     activeTab === 'future' ? renderFutureTab() :
-                     activeTab === 'masterData2' ? renderT2Table('masterData2') :
-                     renderT1Table(activeTab as any)}
+                <div className="flex-1 p-3 sm:p-8 overflow-hidden bg-white flex flex-col">
+                    <div className="flex-1 overflow-x-auto border border-slate-200 rounded-xl touch-pan-y">
+                        {activeTab === 'coefSettings' ? renderCoefTable(localConfig.coefSettings, false) : 
+                         activeTab === 'future' ? renderFutureTab() :
+                         activeTab === 'masterData2' ? renderT2Table('masterData2') :
+                         renderT1Table(activeTab as any)}
+                    </div>
                      
-                     <div className="mt-auto pt-3 text-sm text-right text-slate-400">
+                     <div className="mt-2 sm:mt-4 pt-2 text-[10px] sm:text-sm text-right text-slate-400">
                         * <span className="text-red-700 font-bold bg-red-100 px-1 rounded">赤字</span> は初期値から変更された箇所です
                      </div>
                 </div>
 
-                <div className="p-6 border-t border-slate-200 bg-slate-50 flex justify-end gap-4 shrink-0">
-                    <button onClick={onClose} className="px-6 py-3 rounded-xl text-slate-600 font-bold hover:bg-slate-200 transition text-base">キャンセル</button>
-                    <button onClick={handleSave} className="px-6 py-3 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 transition flex items-center gap-2 shadow-sm text-base">
-                        <Save className="w-5 h-5"/> 変更を適用
+                <div className="p-3 sm:p-6 border-t border-slate-200 bg-slate-50 flex justify-end gap-2 sm:gap-4 shrink-0">
+                    <button onClick={handleClose} className="px-4 sm:px-6 py-2 sm:py-3 rounded-lg sm:rounded-xl text-slate-600 font-bold hover:bg-slate-200 transition text-sm sm:text-base">キャンセル</button>
+                    <button onClick={handleSave} className="px-4 sm:px-6 py-2 sm:py-3 rounded-lg sm:rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 transition flex items-center gap-2 shadow-sm text-sm sm:text-base">
+                        <Save className="w-4 h-4 sm:w-5 sm:h-5"/> 変更を適用
                     </button>
                 </div>
             </div>
+            {/* Confirm Modal */}
+            {confirmAction && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[110] p-4">
+                    <div className="bg-white dark:bg-slate-800 rounded-xl p-6 max-w-sm w-full shadow-2xl">
+                        <h3 className="text-lg font-bold mb-2 text-slate-900 dark:text-white">{confirmAction.title}</h3>
+                        <p className="text-slate-600 dark:text-slate-400 mb-6 whitespace-pre-wrap">{confirmAction.message}</p>
+                        <div className="flex gap-3 justify-end">
+                            <button onClick={() => setConfirmAction(null)} className="px-4 py-2 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg">キャンセル</button>
+                            <button onClick={confirmAction.onConfirm} className="px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600">実行する</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

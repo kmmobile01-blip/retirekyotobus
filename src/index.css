@@ -5,8 +5,29 @@
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
 
-body { 
-  @apply font-sans bg-slate-50 text-slate-900;
+html, body { 
+  @apply font-sans bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  width: 100%;
+}
+
+/* Custom scrollbar for better visibility on mobile */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-default::-webkit-scrollbar {
+  height: 4px;
+  width: 4px;
+}
+
+.scrollbar-default::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+
+.scrollbar-default::-webkit-scrollbar-thumb {
+  @apply bg-slate-300 dark:bg-slate-700 rounded-full;
 }
 
 @media print {
