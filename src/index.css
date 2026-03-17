@@ -1,0 +1,23 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", "Noto Sans JP", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+body { 
+  @apply font-sans bg-slate-50 text-slate-900;
+}
+
+@media print {
+  @page { margin: 15mm; }
+  .no-print { display: none !important; }
+  body { background: white; color: black; width: 100%; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .shadow-2xl, .shadow-xl, .shadow-lg, .shadow-md, .shadow-sm { box-shadow: none !important; }
+  .print-break-inside-avoid { break-inside: avoid; }
+  .overflow-x-auto, .overflow-y-auto { overflow: visible !important; }
+  .max-h-72, .max-h-\[300px\], .max-h-\[500px\] { max-height: none !important; height: auto !important; }
+  thead { display: table-header-group; }
+  tr { break-inside: avoid; }
+  .report-section { page-break-before: always; }
+}
