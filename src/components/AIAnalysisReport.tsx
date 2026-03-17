@@ -1572,10 +1572,10 @@ Year,T1,T2,T3,T4
                                     <div className="text-xs text-slate-400 font-mono uppercase">{selectedModel}</div>
                                     <button 
                                         onClick={() => setIsChatVisible(false)}
-                                        className="p-1 hover:bg-slate-700 rounded transition text-slate-400 hover:text-white"
-                                        title="チャットを閉じる"
+                                        className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg transition text-xs font-bold text-slate-300 hover:text-white"
                                     >
-                                        <X className="w-5 h-5" />
+                                        <X className="w-4 h-4" />
+                                        <span>閉じる</span>
                                     </button>
                                 </div>
                             </div>

@@ -311,7 +311,8 @@ export const processRow = (
             }
         }
         if (useOldSystemTable && calcStartDate) {
-            pointCalcBaseDate = calcStartDate;
+            // 旧制度の人は入社日で計算するため、算定開始日による上書きを無効化
+            // pointCalcBaseDate = calcStartDate; 
         }
 
         const getMode = (key: 'los' | 'rank' | 'eval') => {
