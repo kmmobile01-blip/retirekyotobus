@@ -420,91 +420,102 @@ export const processRow = (
             return fullYearPoints + roundTo2(fractionPoints);
         };
 
-        // --- 初期ポイントの決定 ---
-        let initialLosPointsInput = 0, initialRankPointsInput = 0, initialEvalPointsInput = 0;
-        
-        // 上限時点での最大ポイントを計算しておく
-        const maxLosAtCap = calculatePts(capYearCurrent, 'los', useOldSystemTable, getMode('los'));
-        const maxRankAtCap = calculatePts(capYearCurrent, rankKeyNew, useOldSystemTable, getMode('rank'));
+  // --- 初期ポイントの決定 ---
+  let initialLosPointsInput = 0, initialRankPointsInput = 0, initialEvalPointsInput = 0;
+  
+  // 旧制度の理論上限 (素点)
+  const MAX_LOS_OLD_BASE = 1050.00;
+  // 調整率の推定 (1135.42 / 1050 ≒ 1.08135)
+  const LOS_ADJUST_COEF = 1.08135; 
 
-        if (inputLos !== undefined) {
-            // ユーザー入力がある場合も、制度上の上限を超えないように制御
-            initialLosPointsInput = Math.min(Number(inputLos), maxLosAtCap);
-            initialRankPointsInput = Math.min(Number(inputRank || 0), maxRankAtCap);
-            initialEvalPointsInput = Number(inputEval || 0);
-        } else {
-            // 入力がない場合はマスタから推定
-            const currentYearsFloat = calculatePeriodYears(pointCalcBaseDate, referenceDate, getMode('los'));
-            const cappedCurrentYears = Math.min(currentYearsFloat, capYearCurrent);
-            
-            initialLosPointsInput = calculatePts(cappedCurrentYears, 'los', useOldSystemTable, getMode('los'));
-            initialRankPointsInput = calculatePts(cappedCurrentYears, rankKeyNew, useOldSystemTable, getMode('rank'));
-            initialEvalPointsInput = 0; 
-        }
+  // 上限時点での最大ポイントを計算しておく
+  const maxLosAtCap = calculatePts(capYearCurrent, 'los', useOldSystemTable, getMode('los'));
+  const maxRankAtCap = calculatePts(capYearCurrent, rankKeyNew, useOldSystemTable, getMode('rank'));
 
-        const targetFutureMaster = masterDataFuture[typeKey];
+  if (inputLos !== undefined) {
+      if (typeKey === 'type4') {
+          initialLosPointsInput = Math.min(Number(inputLos), maxLosAtCap);
+          initialRankPointsInput = Math.min(Number(inputRank || 0), maxRankAtCap);
+      } else {
+          // 旧制度で1135.42等の調整後ポイントが入力された場合、10,000円単価ベース(1050pt)に正規化する
+          // 1135.42 / 1.08135 = 1050
+          initialLosPointsInput = roundTo2(Number(inputLos) / LOS_ADJUST_COEF);
+          initialRankPointsInput = roundTo2(Number(inputRank || 0) / LOS_ADJUST_COEF);
 
-        const currentYearsFloat = calculatePeriodYears(pointCalcBaseDate, referenceDate, getMode('los'));
-        const cappedCurrentYearsLos = Math.min(currentYearsFloat, capYearCurrent);
-        const totalLosAtCurrent = calculatePts(cappedCurrentYearsLos, 'los', useOldSystemTable, getMode('los'));
+          // 理論上限でキャップ
+          initialLosPointsInput = Math.min(initialLosPointsInput, MAX_LOS_OLD_BASE);
+          const maxRankOld = calculatePts(35, rankKeyNew, true, getMode('rank'));
+          initialRankPointsInput = Math.min(initialRankPointsInput, maxRankOld);
+      }
+      initialEvalPointsInput = Number(inputEval || 0);
+  } else {
+      const currentYearsFloat = calculatePeriodYears(pointCalcBaseDate, referenceDate, getMode('los'));
+      const cappedCurrentYears = Math.min(currentYearsFloat, capYearCurrent);
+      initialLosPointsInput = calculatePts(cappedCurrentYears, 'los', useOldSystemTable, getMode('los'));
+      initialRankPointsInput = calculatePts(cappedCurrentYears, rankKeyNew, useOldSystemTable, getMode('rank'));
+      initialEvalPointsInput = 0; 
+  }
 
-        const cappedCurrentYearsRank = Math.min(currentYearsFloat, capYearCurrent);
-        const totalRankAtCurrent = calculatePts(cappedCurrentYearsRank, rankKeyNew, useOldSystemTable, getMode('rank'));
+  // --- 勤続ポイント(LOS)の将来加算ロジック ---
+  const targetFutureMaster = masterDataFuture[typeKey];
+  const currentYearsFloat = calculatePeriodYears(pointCalcBaseDate, referenceDate, getMode('los'));
+  const currentYearsFloatRank = calculatePeriodYears(pointCalcBaseDate, referenceDate, getMode('rank'));
 
-        let totalLosAtRetire = 0;
-        let totalRankAtRetire = 0;
+  // 素点ベースで上限に達しているか判定
+  const isLosAlreadyAtMax = (typeKey !== 'type4') 
+      ? (initialLosPointsInput >= MAX_LOS_OLD_BASE - 0.01)
+      : (initialLosPointsInput >= maxLosAtCap);
 
-        if (useAdjustment || useUnify) {
-            const yearsAtFreezeLos = calculatePeriodYears(pointCalcBaseDate, d2026_03_31, getMode('los'));
-            const yearsAtFreezeRank = calculatePeriodYears(pointCalcBaseDate, d2026_03_31, getMode('rank'));
-            
-            const cappedFreezeYearsLos = Math.min(yearsAtFreezeLos, capYearCurrent);
-            const cappedFreezeYearsRank = Math.min(yearsAtFreezeRank, capYearCurrent);
-            
-            totalLosAtRetire = calculatePts(cappedFreezeYearsLos, 'los', useOldSystemTable, getMode('los'));
-            totalRankAtRetire = calculatePts(cappedFreezeYearsRank, rankKeyNew, useOldSystemTable, getMode('rank'));
-            
-        } else if (useTransition && transitionDate) {
-            const yearsAtTransitionLos = calculatePeriodYears(pointCalcBaseDate, transitionDate, getMode('los'));
-            const yearsAtTransitionRank = calculatePeriodYears(pointCalcBaseDate, transitionDate, getMode('rank'));
-            
-            const cappedTransitionYearsLos = Math.min(yearsAtTransitionLos, capYearCurrent);
-            const losAtTransition = calculatePts(cappedTransitionYearsLos, 'los', useOldSystemTable, getMode('los'));
-            
-            const cappedRankYearsAtTransition = Math.min(yearsAtTransitionRank, capYearCurrent);
-            const rankAtTransition = calculatePts(cappedRankYearsAtTransition, rankKeyNew, useOldSystemTable, getMode('rank'));
+  let totalLosAtRetire = 0;
+  let totalRankAtRetire = 0;
 
-            const yearsAtRetireLos = calculatePeriodYears(pointCalcBaseDate, retireDateLos, getMode('los'));
-            const yearsAtRetireRank = calculatePeriodYears(pointCalcBaseDate, retireDateRank, getMode('rank'));
+  if (useAdjustment || useUnify) {
+      const yearsAtFreezeLos = calculatePeriodYears(pointCalcBaseDate, d2026_03_31, getMode('los'));
+      const yearsAtFreezeRank = calculatePeriodYears(pointCalcBaseDate, d2026_03_31, getMode('rank'));
+      const cappedFreezeYearsLos = Math.min(yearsAtFreezeLos, capYearCurrent);
+      const cappedFreezeYearsRank = Math.min(yearsAtFreezeRank, capYearCurrent);
+      totalLosAtRetire = calculatePts(cappedFreezeYearsLos, 'los', useOldSystemTable, getMode('los'));
+      totalRankAtRetire = calculatePts(cappedFreezeYearsRank, rankKeyNew, useOldSystemTable, getMode('rank'));
+  } else if (useTransition && transitionDate) {
+      const yearsAtTransitionLos = calculatePeriodYears(pointCalcBaseDate, transitionDate, getMode('los'));
+      const yearsAtTransitionRank = calculatePeriodYears(pointCalcBaseDate, transitionDate, getMode('rank'));
+      const cappedTransitionYearsLos = Math.min(yearsAtTransitionLos, capYearCurrent);
+      const losAtTransition = calculatePts(cappedTransitionYearsLos, 'los', useOldSystemTable, getMode('los'));
+      const cappedRankYearsAtTransition = Math.min(yearsAtTransitionRank, capYearCurrent);
+      const rankAtTransition = calculatePts(cappedRankYearsAtTransition, rankKeyNew, useOldSystemTable, getMode('rank'));
 
-            const cappedRetireYearsLosFuture = Math.min(yearsAtRetireLos, capYearFuture);
-            const cappedTransitionYearsLosFuture = Math.min(yearsAtTransitionLos, capYearFuture);
-            const losNewAtRetire = calculatePts(cappedRetireYearsLosFuture, 'los', false, getMode('los'), targetFutureMaster);
-            const losNewAtTransition = calculatePts(cappedTransitionYearsLosFuture, 'los', false, getMode('los'), targetFutureMaster);
-            const incLosFuture = Math.max(0, losNewAtRetire - losNewAtTransition);
+      const yearsAtRetireLos = calculatePeriodYears(pointCalcBaseDate, retireDateLos, getMode('los'));
+      const yearsAtRetireRank = calculatePeriodYears(pointCalcBaseDate, retireDateRank, getMode('rank'));
+      const cappedRetireYearsLosFuture = Math.min(yearsAtRetireLos, capYearFuture);
+      const cappedTransitionYearsLosFuture = Math.min(yearsAtTransitionLos, capYearFuture);
+      const losNewAtRetire = calculatePts(cappedRetireYearsLosFuture, 'los', false, getMode('los'), targetFutureMaster);
+      const losNewAtTransition = calculatePts(cappedTransitionYearsLosFuture, 'los', false, getMode('los'), targetFutureMaster);
+      const incLosFuture = Math.max(0, losNewAtRetire - losNewAtTransition);
 
-            const cappedRetireYearsRankFuture = Math.min(yearsAtRetireRank, capYearFuture);
-            const cappedTransitionYearsRankFuture = Math.min(yearsAtTransitionRank, capYearFuture);
-            const rankNewAtRetire = calculatePts(cappedRetireYearsRankFuture, rankKeyNew, false, getMode('rank'), targetFutureMaster);
-            const rankNewAtTransition = calculatePts(cappedTransitionYearsRankFuture, rankKeyNew, false, getMode('rank'), targetFutureMaster);
-            const incRankFuture = Math.max(0, rankNewAtRetire - rankNewAtTransition);
+      const cappedRetireYearsRankFuture = Math.min(yearsAtRetireRank, capYearFuture);
+      const cappedTransitionYearsRankFuture = Math.min(yearsAtTransitionRank, capYearFuture);
+      const rankNewAtRetire = calculatePts(cappedRetireYearsRankFuture, rankKeyNew, false, getMode('rank'), targetFutureMaster);
+      const rankNewAtTransition = calculatePts(cappedTransitionYearsRankFuture, rankKeyNew, false, getMode('rank'), targetFutureMaster);
+      const incRankFuture = Math.max(0, rankNewAtRetire - rankNewAtTransition);
 
-            totalLosAtRetire = losAtTransition + incLosFuture;
-            totalRankAtRetire = rankAtTransition + incRankFuture;
+      totalLosAtRetire = losAtTransition + incLosFuture;
+      totalRankAtRetire = rankAtTransition + incRankFuture;
+  } else {
+      const retirementYearsFloatLos = calculatePeriodYears(pointCalcBaseDate, retireDateLos, getMode('los'));
+      const retirementYearsFloatRank = calculatePeriodYears(pointCalcBaseDate, retireDateRank, getMode('rank'));
+      const cappedRetirementYearsLos = Math.min(retirementYearsFloatLos, capYearCurrent);
+      const cappedRetirementYearsRank = Math.min(retirementYearsFloatRank, capYearCurrent);
+      totalLosAtRetire = calculatePts(cappedRetirementYearsLos, 'los', useOldSystemTable, getMode('los'));
+      totalRankAtRetire = calculatePts(cappedRetirementYearsRank, rankKeyNew, useOldSystemTable, getMode('rank'));
+  }
 
-        } else {
-            const retirementYearsFloatLos = calculatePeriodYears(pointCalcBaseDate, retireDateLos, getMode('los'));
-            const retirementYearsFloatRank = calculatePeriodYears(pointCalcBaseDate, retireDateRank, getMode('rank'));
-            
-            const cappedRetirementYearsLos = Math.min(retirementYearsFloatLos, capYearCurrent);
-            const cappedRetirementYearsRank = Math.min(retirementYearsFloatRank, capYearCurrent);
-            
-            totalLosAtRetire = calculatePts(cappedRetirementYearsLos, 'los', useOldSystemTable, getMode('los'));
-            totalRankAtRetire = calculatePts(cappedRetirementYearsRank, rankKeyNew, useOldSystemTable, getMode('rank'));
-        }
+  // 将来加算額の算出
+  const totalLosAtCurrent = calculatePts(Math.min(currentYearsFloat, capYearCurrent), 'los', useOldSystemTable, getMode('los'));
+  const totalRankAtCurrent = calculatePts(Math.min(currentYearsFloatRank, capYearCurrent), rankKeyNew, useOldSystemTable, getMode('rank'));
+  
+  let futureLosPoints = isLosAlreadyAtMax ? 0 : Math.max(0, totalLosAtRetire - totalLosAtCurrent);
+  let futureRankPoints = Math.max(0, totalRankAtRetire - totalRankAtCurrent);
 
-        let futureLosPoints = Math.max(0, totalLosAtRetire - Math.max(totalLosAtCurrent, initialLosPointsInput));
-        let futureRankPoints = Math.max(0, totalRankAtRetire - Math.max(totalRankAtCurrent, initialRankPointsInput));
 
         let futureEvalPoints = 0;
         const rowInputEval = (row['想定考課Pt'] !== undefined && row['想定考課Pt'] !== '') ? Number(row['想定考課Pt']) : null;
@@ -576,8 +587,8 @@ export const processRow = (
         let adjustmentRemainder = 0;
 
         let totalPoints = roundTo2(
-            Math.min(initialLosPointsInput + futureLosPoints, totalLosAtRetire) + 
-            Math.min(initialRankPointsInput + futureRankPoints, totalRankAtRetire) + 
+            (initialLosPointsInput + futureLosPoints) + 
+            (initialRankPointsInput + futureRankPoints) + 
             (initialEvalPointsInput + futureEvalPoints)
         );
 
@@ -612,8 +623,8 @@ export const processRow = (
         const initialReserveAmount = Math.ceil((runningLos + runningRank + runningEval + runningAdj) * unitPrice * initialCoef / 10) * 10;
         let prevReserveAmount = initialReserveAmount;
         
-        let trackingTheoryLos = Math.max(totalLosAtCurrent, initialLosPointsInput);
-        let trackingTheoryRank = Math.max(totalRankAtCurrent, initialRankPointsInput);
+        let trackingTheoryLos = totalLosAtCurrent;
+        let trackingTheoryRank = totalRankAtCurrent;
         
         const endYear = retireDateLos.getMonth() < 3 ? retireDateLos.getFullYear() - 1 : retireDateLos.getFullYear();
         const maxLoopYear = Math.max(2080, endYear + 2);
@@ -693,9 +704,7 @@ export const processRow = (
                      }
                 }
 
-                runningLos = Math.min(runningLos + incLos, totalLosAtRetire); 
-                runningRank = Math.min(runningRank + incRank, totalRankAtRetire); 
-                runningEval += incEval; 
+                runningLos += incLos; runningRank += incRank; runningEval += incEval; 
                 
                 const currentCoef = getEffectiveCoef(nextYearsFloatForCoef, referenceDateY);
                 let effectiveCoef = currentCoef;
